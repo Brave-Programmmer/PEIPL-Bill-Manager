@@ -8,7 +8,9 @@ import {
   Moon, 
   Sun,
   Menu,
-  ChevronRight
+  ChevronRight,
+  Upload,
+  FileArchive,
 } from 'lucide-react';
 import { useInvoiceStore } from '../store/useInvoiceStore';
 import { migrateOldInvoice } from '../utils/migration';
@@ -16,6 +18,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TitleBar } from './TitleBar';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { CompanionAssistant, COMPANION_SETTINGS_EVENT } from './CompanionAssistant';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,14 +28,35 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+interface OpenFileEvent {
+  content: unknown;
+}
+
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { theme, toggleTheme, setCurrentInvoice } = useInvoiceStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [userName, setUserName] = React.useState(() => {
+    try {
+      const stored = localStorage.getItem('peipl-companion-settings');
+      return stored ? JSON.parse(stored).displayName || 'Aarathi' : 'Aarathi';
+    } catch {
+      return 'Aarathi';
+    }
+  });
 
   React.useEffect(() => {
-    const cleanup = window.electron.onFileOpen((data: any) => {
+    const handleProfileChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ displayName?: string }>).detail;
+      setUserName(detail.displayName?.trim() || 'Aarathi');
+    };
+    window.addEventListener(COMPANION_SETTINGS_EVENT, handleProfileChange);
+    return () => window.removeEventListener(COMPANION_SETTINGS_EVENT, handleProfileChange);
+  }, []);
+
+  React.useEffect(() => {
+    const cleanup = window.electron.onFileOpen((data: OpenFileEvent) => {
       console.log('File opened from OS:', data);
       const migratedData = migrateOldInvoice(data.content);
       setCurrentInvoice(migratedData);
@@ -46,8 +70,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: FilePlus, label: 'New Invoice', path: '/editor' },
+    { icon: Upload, label: 'GeM Upload', path: '/gem-upload' },
     { icon: History, label: 'Invoice History', path: '/history' },
     { icon: Settings, label: 'Settings', path: '/settings' },
+    { icon: FileArchive, label: 'PDF Tools', path: '/pdf-tools' },
   ];
 
   React.useEffect(() => {
@@ -66,7 +92,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <motion.aside 
         initial={false}
         animate={{ width: isSidebarOpen ? 260 : 80 }}
-        className="relative flex flex-col border-r border-border glass bg-card/50 backdrop-blur-xl z-20"
+        className="relative flex flex-col shrink-0 border-r border-border glass bg-card/50 backdrop-blur-xl z-20"
       >
         <div className="p-6 flex items-center justify-between">
           <AnimatePresence mode="wait">
@@ -83,7 +109,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           </AnimatePresence>
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 rounded-lg hover:bg-accent transition-colors"
+            className="p-2 rounded-lg hover:bg-accent transition-colors flex-shrink-0"
           >
             <Menu size={20} />
           </button>
@@ -107,7 +133,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 to={item.path}
                 onClick={handleClick}
                 className={cn(
-                  "flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group relative",
+                  "flex items-center gap-3 min-h-[44px] p-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
                   isActive
                     ? "bg-primary-500/10 text-primary-600 dark:text-primary-400 font-medium" 
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -140,7 +166,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="p-4 border-t border-border">
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-accent transition-all group"
+            className="flex items-center justify-start gap-3 p-3 w-full rounded-xl hover:bg-accent transition-all group"
           >
             {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
             {isSidebarOpen && (
@@ -153,23 +179,28 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </motion.aside>
 
       {/* Main Content */}
-      <main className="flex-1 relative overflow-y-auto scroll-smooth bg-slate-50/50 dark:bg-slate-950/50">
-        <header className="sticky top-0 z-10 glass-card mx-6 mt-6 p-4 rounded-2xl flex items-center justify-between border-slate-200/50 dark:border-slate-800/50">
+      <main className="flex-1 min-h-0 relative overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50">
+        <header className="sticky top-0 z-[200] glass-card mx-6 mt-6 p-4 rounded-2xl flex items-center justify-between border-slate-200/50 dark:border-slate-800/50 shadow-sm backdrop-blur-xl">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="capitalize">{location.pathname.replace('/', '') || 'Dashboard'}</span>
             <ChevronRight size={14} />
             <span className="text-foreground font-medium">Overview</span>
           </div>
           
-          <div className="flex items-center gap-4">
+           <div className="flex items-center gap-3">
              {/* Profile/Quick Actions */}
-             <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white font-bold text-xs">
-               PE
+             <CompanionAssistant compact />
+             <div className="hidden text-right sm:block">
+               <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Workspace</p>
+               <p className="text-xs font-bold text-foreground">{userName}'s desk</p>
+             </div>
+             <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white font-bold text-xs" title={`${userName}'s workspace`}>
+               {userName.slice(0, 2).toUpperCase()}
              </div>
           </div>
         </header>
 
-        <div className="p-6 h-[calc(100vh-100px)]">
+        <div className="flex-1 min-h-0 px-6 pb-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -177,7 +208,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.2 }}
-              className="h-full"
+              className="h-full min-h-0"
             >
               {children}
             </motion.div>

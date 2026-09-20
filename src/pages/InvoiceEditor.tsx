@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import {
   Plus,
@@ -31,6 +31,42 @@ import { clsx } from "clsx";
 
 import { PrintPreview } from "../components/PrintPreview";
 
+// Helper component for inputs that should only trigger calculations on blur or enter
+const DelayedInput: React.FC<{
+  value: any;
+  onSave: (val: string) => void;
+  className?: string;
+  placeholder?: string;
+}> = ({ value, onSave, className, placeholder }) => {
+  const [localValue, setLocalValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const persistValue = () => {
+    onSave(localValue);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={() => persistValue()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          persistValue();
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className={className}
+      placeholder={placeholder}
+    />
+  );
+};
+
 export const InvoiceEditor: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,6 +85,7 @@ export const InvoiceEditor: React.FC = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isHeaderOpen, setIsHeaderOpen] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const [showTaxColumns, setShowTaxColumns] = useState(false);
   const [showPresetMenu, setShowPresetMenu] = useState(false);
   const [presetSearch, setPresetSearch] = useState("");
   const [isSavingPreset, setIsSavingPreset] = useState(false);
@@ -77,6 +114,7 @@ export const InvoiceEditor: React.FC = () => {
       customerAddress: "TROMBAY UNIT\nMUMBAI.400 074",
       customerGST: "27AAACR2831H1ZK",
       taxMode: "GST",
+      itemsPerPage: 12,
       items: [
         {
           id: 1,
@@ -107,59 +145,7 @@ export const InvoiceEditor: React.FC = () => {
     },
   });
 
-  const handleCreateNew = () => {
-    if (isDirty) {
-      const confirm = window.confirm(
-        "You have unsaved changes. Are you sure you want to create a new invoice and discard changes?",
-      );
-      if (!confirm) return;
-    }
 
-    // Reset to defaults
-    setCurrentInvoice(null);
-    reset({
-      billNumber: `PEIPL/${new Date().getFullYear()}/${Math.floor(Math.random() * 1000)}`,
-      date: new Date().toISOString().split("T")[0],
-      orderNumber: "GEMC-511687712601789",
-      orderDate: "",
-      outlineAgreement: "4600002141",
-      gemSellerId: "RXON210002099996",
-      jobsheetNo: "ATTACHED",
-      vendorCode: "102237",
-      customerName: "RASHTRIYA CHEMICALS & FERTILIZERS LTD",
-      plantName: "S.G. INSTRUMENT PLANT",
-      customerAddress: "TROMBAY UNIT\nMUMBAI.400 074",
-      customerGST: "27AAACR2831H1ZK",
-      taxMode: "GST",
-      items: [
-        {
-          id: 1,
-          description: "",
-          sacHsn: [""],
-          quantity: [0],
-          unit: "PCS",
-          rate: [0],
-          amount: [0],
-          cgstRate: 9,
-          cgstAmount: [0],
-          sgstRate: 9,
-          sgstAmount: [0],
-          totalWithGST: [0],
-          dates: [""],
-          srNoDate: [""],
-          refNo: [""],
-        },
-      ],
-      totalTaxableValue: 0,
-      totalCGST: 0,
-      totalSGST: 0,
-      totalIGST: 0,
-      grandTotal: 0,
-      amountInWords: "",
-      status: "draft",
-      showStamp: true,
-    });
-  };
 
   // Load existing invoice if ID is present OR if currentInvoice is set in store
   useEffect(() => {
@@ -216,31 +202,18 @@ export const InvoiceEditor: React.FC = () => {
       for (let i = 0; i < maxLen; i++) {
         const q = parseNumeric(qtyArr[i]);
         const r = parseNumeric(rateArr[i]);
-        amounts.push(Number((q * r).toFixed(2)));
+        amounts.push(q * r);
       }
 
       const cgstRate = Number(item.cgstRate) || 0;
       const sgstRate = Number(item.sgstRate) || 0;
       const igstRate = Number(item.igstRate) || 0;
 
-      const cgstAmounts = amounts.map((a) =>
-        Number(((a * cgstRate) / 100).toFixed(2)),
-      );
-      const sgstAmounts = amounts.map((a) =>
-        Number(((a * sgstRate) / 100).toFixed(2)),
-      );
-      const igstAmounts = amounts.map((a) =>
-        Number(((a * igstRate) / 100).toFixed(2)),
-      );
-      const totalsGST = amounts.map((a, i) =>
-        Number(
-          (
-            a +
-            (cgstAmounts[i] || 0) +
-            (sgstAmounts[i] || 0) +
-            (igstAmounts[i] || 0)
-          ).toFixed(2),
-        ),
+      const cgstAmounts = amounts.map((a) => (a * cgstRate) / 100);
+      const sgstAmounts = amounts.map((a) => (a * sgstRate) / 100);
+      const igstAmounts = amounts.map((a) => (a * igstRate) / 100);
+      const totalsGST = amounts.map(
+        (a, i) => a + (cgstAmounts[i] || 0) + (sgstAmounts[i] || 0) + (igstAmounts[i] || 0),
       );
 
       return {
@@ -262,61 +235,50 @@ export const InvoiceEditor: React.FC = () => {
     };
   }, [watchedItems, taxMode, calculateTotals]);
 
-  // Push calculations back to form state for persistence and template use
-  useEffect(() => {
-    if (!calculations) return;
+  const getCalculatedInvoiceData = () => {
+    const formData = watch();
+    if (!calculations) return formData;
 
-    calculations.items.forEach((itemCalc, idx) => {
-      if (
-        JSON.stringify(watchedItems[idx]?.amount) !==
-        JSON.stringify(itemCalc.amount)
-      ) {
-        setValue(`items.${idx}.amount`, itemCalc.amount);
-      }
-      if (
-        JSON.stringify(watchedItems[idx]?.cgstAmount) !==
-        JSON.stringify(itemCalc.cgstAmount)
-      ) {
-        setValue(`items.${idx}.cgstAmount`, itemCalc.cgstAmount);
-      }
-      if (
-        JSON.stringify(watchedItems[idx]?.sgstAmount) !==
-        JSON.stringify(itemCalc.sgstAmount)
-      ) {
-        setValue(`items.${idx}.sgstAmount`, itemCalc.sgstAmount);
-      }
-      if (
-        JSON.stringify(watchedItems[idx]?.igstAmount) !==
-        JSON.stringify(itemCalc.igstAmount)
-      ) {
-        setValue(`items.${idx}.igstAmount`, itemCalc.igstAmount);
-      }
-      if (
-        JSON.stringify(watchedItems[idx]?.totalWithGST) !==
-        JSON.stringify(itemCalc.totalWithGST)
-      ) {
-        setValue(`items.${idx}.totalWithGST`, itemCalc.totalWithGST);
-      }
-    });
-
-    setValue("totalTaxableValue", calculations.totals.totalTaxableValue);
-    setValue("totalCGST", calculations.totals.totalCGST);
-    setValue("totalSGST", calculations.totals.totalSGST);
-    setValue("totalIGST", calculations.totals.totalIGST);
-    setValue("grandTotal", calculations.totals.grandTotal);
-    setValue("amountInWords", calculations.amountInWords);
-  }, [calculations, setValue, watchedItems]);
+    return {
+      ...formData,
+      totalTaxableValue: calculations.totals.totalTaxableValue,
+      totalCGST: calculations.totals.totalCGST,
+      totalSGST: calculations.totals.totalSGST,
+      totalIGST: calculations.totals.totalIGST,
+      grandTotal: calculations.totals.grandTotal,
+      amountInWords: calculations.amountInWords,
+    } as Invoice;
+  };
 
   const handleSaveAs = async () => {
-    const data = watch();
-    const result = await window.electron.saveFile({ content: data });
+    const data = getCalculatedInvoiceData();
+    const result = await window.electron.saveFile({ 
+      content: data,
+      filePath: data.filePath // Pass existing path if available
+    });
     if (result) {
-      alert(`Invoice saved to: ${result}`);
+      setValue("filePath", result); // Update form state with the saved path
+      saveInvoice({ ...data, filePath: result }); // Update store history
+      alert(`Invoice saved successfully!`);
     }
   };
 
   const onSubmit = (data: Invoice) => {
-    saveInvoice(data);
+    const finalData = {
+      ...data,
+      ...(calculations
+        ? {
+            totalTaxableValue: calculations.totals.totalTaxableValue,
+            totalCGST: calculations.totals.totalCGST,
+            totalSGST: calculations.totals.totalSGST,
+            totalIGST: calculations.totals.totalIGST,
+            grandTotal: calculations.totals.grandTotal,
+            amountInWords: calculations.amountInWords,
+          }
+        : {}),
+    };
+
+    saveInvoice(finalData);
     alert("Invoice saved to local history!");
     navigate("/");
   };
@@ -324,7 +286,10 @@ export const InvoiceEditor: React.FC = () => {
   const handleImport = async () => {
     const result = await window.electron.selectFile();
     if (result) {
-      const migratedData = migrateOldInvoice(result.content);
+      const migratedData = migrateOldInvoice({
+        ...result.content,
+        filePath: result.path // Inject path from electron result
+      });
       reset(migratedData);
     }
   };
@@ -378,24 +343,47 @@ export const InvoiceEditor: React.FC = () => {
           {/* Main Form */}
           <div className="lg:col-span-3 space-y-8">
             {/* Items Table - Industrial Format */}
-            <div className="glass-card rounded-3xl overflow-hidden border border-border">
-              <div className="p-4 border-b border-border flex items-center justify-between bg-accent/20">
+            <div className="glass-card overflow-hidden rounded-[28px] border border-primary-500/10 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+              <div className="flex items-center justify-between gap-4 border-b border-border bg-gradient-to-r from-primary-500/8 via-accent/30 to-transparent p-4 md:p-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary-500 text-white flex items-center justify-center">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500 text-white shadow-lg shadow-primary-500/20">
                     <FileTextIcon size={18} />
                   </div>
-                  <h2 className="text-sm font-black uppercase tracking-[0.2em]">
-                    Job Entries
-                  </h2>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary-500/80">
+                      Ledger
+                    </p>
+                    <h2 className="text-sm font-black uppercase tracking-[0.18em]">
+                      Job Entries
+                    </h2>
+                  </div>
                 </div>
-                <div className="flex gap-4">
-                  <select
-                    {...register("taxMode")}
-                    className="bg-background border border-border rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 ring-primary-500/20"
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    aria-pressed={showTaxColumns}
+                    onClick={() => setShowTaxColumns((prev) => !prev)}
+                    className={clsx(
+                      "rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-all",
+                      showTaxColumns
+                        ? "border-primary-500/30 bg-primary-500/10 text-primary-600"
+                        : "border-border bg-background/80 text-muted-foreground hover:text-foreground",
+                    )}
                   >
-                    <option value="GST">CGST + SGST (9%+9%)</option>
-                    <option value="IGST">IGST (18%)</option>
-                  </select>
+                    {showTaxColumns ? "Hide tax totals" : "Show tax totals"}
+                  </button>
+                  <div className="flex items-center gap-2 rounded-xl border border-border bg-background/80 px-2.5 py-1.5 shadow-sm">
+                    <span className="text-[9px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                      Tax
+                    </span>
+                    <select
+                      {...register("taxMode")}
+                      className="bg-transparent text-xs font-bold outline-none focus:ring-0"
+                    >
+                      <option value="GST">CGST + SGST (9%+9%)</option>
+                      <option value="IGST">IGST (18%)</option>
+                    </select>
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
@@ -419,7 +407,7 @@ export const InvoiceEditor: React.FC = () => {
                         refNo: [""],
                       })
                     }
-                    className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-primary-500/20 active:scale-95"
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-700 active:scale-[0.98]"
                   >
                     <Plus size={14} />
                     Add Job Category
@@ -428,28 +416,32 @@ export const InvoiceEditor: React.FC = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[11px]">
+                <table className="w-full border-separate border-spacing-0 text-[11px]">
                   <thead>
-                    <tr className="bg-accent/30 border-b border-border text-[10px] font-black uppercase tracking-tighter text-muted-foreground divide-x divide-border">
-                      <th className="p-2 w-[110px]">Sr No & Date</th>
-                      <th className="p-2 w-[60px]">Ref No</th>
-                      <th className="p-2 text-left">Job Description</th>
-                      <th className="p-2 w-[80px]">SAC/HSN</th>
-                      <th className="p-2 w-[50px]">Qty</th>
-                      <th className="p-2 w-[80px]">Rate</th>
-                      <th className="p-2 w-[90px] text-right">Taxable</th>
-                      {taxMode === "GST" ? (
+                    <tr className="bg-accent/30 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                      <th className="border-b border-border p-2.5 text-left w-[110px]">Sr No & Date</th>
+                      <th className="border-b border-border p-2.5 text-left w-[60px]">Ref No</th>
+                      <th className="border-b border-border p-2.5 text-left">Job Description</th>
+                      <th className="border-b border-border p-2.5 text-left w-[80px]">SAC/HSN</th>
+                      <th className="border-b border-border p-2.5 text-left w-[50px]">Qty</th>
+                      <th className="border-b border-border p-2.5 text-left w-[80px]">Rate</th>
+                      {showTaxColumns && (
                         <>
-                          <th className="p-2 w-[80px] text-right">CGST</th>
-                          <th className="p-2 w-[80px] text-right">SGST</th>
+                          <th className="border-b border-border p-2.5 text-right w-[90px]">Taxable</th>
+                          {taxMode === "GST" ? (
+                            <>
+                              <th className="border-b border-border p-2.5 text-right w-[80px]">CGST</th>
+                              <th className="border-b border-border p-2.5 text-right w-[80px]">SGST</th>
+                            </>
+                          ) : (
+                            <th className="border-b border-border p-2.5 text-right w-[160px]" colSpan={2}>
+                              IGST (18%)
+                            </th>
+                          )}
+                          <th className="border-b border-border p-2.5 text-right w-[100px]">Total+GST</th>
                         </>
-                      ) : (
-                        <th className="p-2 w-[160px] text-right" colSpan={2}>
-                          IGST (18%)
-                        </th>
                       )}
-                      <th className="p-2 w-[100px] text-right">Total+GST</th>
-                      <th className="p-2 w-[50px] text-right">Actions</th>
+                      <th className="border-b border-border p-2.5 text-right w-[50px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -457,23 +449,23 @@ export const InvoiceEditor: React.FC = () => {
                       {fields.map((field, index) => (
                         <React.Fragment key={field.id}>
                           {/* Main Row - Contains Description and First Data Entry */}
-                          <tr className="group border-t-2 border-primary-500/20 divide-x divide-border/50">
-                            <td className="p-2 align-top w-[120px]">
+                          <tr className="group border-t-2 border-primary-500/20 bg-gradient-to-r from-background/80 to-primary-500/[0.02]">
+                            <td className="w-[120px] p-2 align-top">
                               <div className="flex flex-col gap-2">
-                                <div className="w-6 h-6 rounded-full bg-primary-500 text-white flex items-center justify-center font-black text-[9px]">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-[9px] font-black text-white shadow-sm shadow-primary-500/30">
                                   {index + 1}
                                 </div>
                                 <input
                                   {...register(`items.${index}.srNoDate.0`)}
-                                  className="w-full bg-transparent border-none focus:ring-0 p-1 text-[11px] font-medium"
+                                  className="w-full rounded-lg border border-transparent bg-transparent p-1.5 text-[11px] font-medium transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                   placeholder="01) 03/01/26"
                                 />
                               </div>
                             </td>
-                            <td className="p-2 align-top w-[80px]">
+                            <td className="w-[80px] p-2 align-top">
                               <input
                                 {...register(`items.${index}.refNo.0`)}
-                                className="w-full bg-transparent border-none focus:ring-0 p-1 text-center text-[11px]"
+                                className="w-full rounded-lg border border-transparent bg-transparent p-1.5 text-center text-[11px] transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                 placeholder="Ref"
                               />
                             </td>
@@ -481,10 +473,10 @@ export const InvoiceEditor: React.FC = () => {
                               <textarea
                                 {...register(`items.${index}.description`)}
                                 rows={3}
-                                className="w-full bg-transparent border-none focus:ring-0 p-0 text-sm uppercase placeholder:text-muted-foreground/30 resize-none leading-tight"
+                                className="w-full resize-none rounded-xl border border-transparent bg-transparent p-1.5 text-sm uppercase leading-tight placeholder:text-muted-foreground/30 transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                 placeholder="ENTER JOB DESCRIPTION HERE..."
                               />
-                              <div className="mt-2 flex items-center justify-between">
+                              <div className="mt-2 flex items-center justify-between gap-3">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -507,78 +499,94 @@ export const InvoiceEditor: React.FC = () => {
                                       { shouldDirty: true },
                                     );
                                   }}
-                                  className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-primary-600 hover:text-primary-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="inline-flex items-center gap-1 rounded-full border border-primary-500/10 bg-primary-500/5 px-2 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-primary-600 transition-all hover:border-primary-500/20 hover:bg-primary-500/10"
                                 >
                                   <Plus size={10} />
                                   Add Sub-Entry
                                 </button>
-                                <div className="flex items-center gap-4">
-                                  <div className="flex items-center gap-2">
-                                    <label className="text-[9px] font-black text-muted-foreground uppercase">
-                                      Unit:
-                                    </label>
-                                    <input
-                                      {...register(`items.${index}.unit`)}
-                                      className="w-12 bg-accent/30 border-none rounded px-1 py-0.5 text-[10px] font-bold text-center"
-                                    />
-                                  </div>
+                                <div className="flex items-center gap-2 rounded-lg bg-accent/30 px-2 py-1">
+                                  <label className="text-[9px] font-black uppercase tracking-[0.12em] text-muted-foreground">
+                                    Unit:
+                                  </label>
+                                  <input
+                                    {...register(`items.${index}.unit`)}
+                                    className="w-12 rounded-md border border-transparent bg-background/80 px-1 py-0.5 text-center text-[10px] font-bold outline-none transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
+                                  />
                                 </div>
                               </div>
                             </td>
-                            <td className="p-2 align-top w-[100px]">
+                            <td className="w-[100px] p-2 align-top">
                               <input
                                 {...register(`items.${index}.sacHsn.0`)}
-                                className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold uppercase text-[11px]"
+                                className="w-full rounded-lg border border-transparent bg-transparent p-1.5 text-center font-mono text-[11px] font-bold uppercase transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                 placeholder="HSN"
                               />
                             </td>
-                            <td className="p-2 align-top w-[60px]">
-                              <input
-                                {...register(`items.${index}.quantity.0`)}
-                                className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold text-[11px]"
+                            <td className="w-[60px] p-2 align-top">
+                              <DelayedInput
+                                value={watchedItems[index]?.quantity?.[0] || 0}
+                                onSave={(val) =>
+                                  setValue(
+                                    `items.${index}.quantity.0`,
+                                    parseNumeric(val),
+                                    { shouldDirty: true },
+                                  )
+                                }
+                                className="w-full rounded-lg border border-transparent bg-transparent p-1.5 text-center font-mono text-[11px] font-bold transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                 placeholder="Qty"
                               />
                             </td>
-                            <td className="p-2 align-top w-[100px]">
-                              <input
-                                {...register(`items.${index}.rate.0`)}
-                                className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold text-[11px]"
+                            <td className="w-[100px] p-2 align-top">
+                              <DelayedInput
+                                value={watchedItems[index]?.rate?.[0] || 0}
+                                onSave={(val) =>
+                                  setValue(
+                                    `items.${index}.rate.0`,
+                                    parseNumeric(val),
+                                    { shouldDirty: true },
+                                  )
+                                }
+                                className="w-full rounded-lg border border-transparent bg-transparent p-1.5 text-center font-mono text-[11px] font-bold transition-all hover:border-primary-500/10 hover:bg-primary-500/[0.02] focus:border-primary-500/30 focus:bg-background focus:ring-2 focus:ring-primary-500/10"
                                 placeholder="Rate"
                               />
                             </td>
-                            <td className="p-2 align-top text-right font-mono font-black pr-2 text-[11px]">
-                              {calculations?.items[index]?.amount
-                                .reduce((a, b) => a + b, 0)
-                                .toFixed(2) || "0.00"}
-                            </td>
-                            {taxMode === "GST" ? (
+                            {showTaxColumns && (
                               <>
-                                <td className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]">
-                                  {calculations?.items[index]?.cgstAmount
+                                <td className="p-2 align-top pr-2 text-right font-mono text-[11px] font-black">
+                                  {calculations?.items[index]?.amount
                                     .reduce((a, b) => a + b, 0)
                                     .toFixed(2) || "0.00"}
                                 </td>
-                                <td className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]">
-                                  {calculations?.items[index]?.sgstAmount
+                                {taxMode === "GST" ? (
+                                  <>
+                                    <td className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                      {calculations?.items[index]?.cgstAmount
+                                        .reduce((a, b) => a + b, 0)
+                                        .toFixed(2) || "0.00"}
+                                    </td>
+                                    <td className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                      {calculations?.items[index]?.sgstAmount
+                                        .reduce((a, b) => a + b, 0)
+                                        .toFixed(2) || "0.00"}
+                                    </td>
+                                  </>
+                                ) : (
+                                  <td
+                                    className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]"
+                                    colSpan={2}
+                                  >
+                                    {calculations?.items[index]?.igstAmount
+                                      .reduce((a, b) => a + b, 0)
+                                      .toFixed(2) || "0.00"}
+                                  </td>
+                                )}
+                                <td className="p-2 align-top text-right font-mono font-black pr-2 text-[11px] text-primary-600">
+                                  {calculations?.items[index]?.totalWithGST
                                     .reduce((a, b) => a + b, 0)
                                     .toFixed(2) || "0.00"}
                                 </td>
                               </>
-                            ) : (
-                              <td
-                                className="p-2 align-top text-right font-mono font-bold text-muted-foreground text-[10px]"
-                                colSpan={2}
-                              >
-                                {calculations?.items[index]?.igstAmount
-                                  .reduce((a, b) => a + b, 0)
-                                  .toFixed(2) || "0.00"}
-                              </td>
                             )}
-                            <td className="p-2 align-top text-right font-mono font-black pr-2 text-[11px] text-primary-600">
-                              {calculations?.items[index]?.totalWithGST
-                                .reduce((a, b) => a + b, 0)
-                                .toFixed(2) || "0.00"}
-                            </td>
                             <td className="p-2 align-top text-center w-[60px]">
                               <button
                                 type="button"
@@ -600,14 +608,14 @@ export const InvoiceEditor: React.FC = () => {
                                   key={`${field.id}-${subIndex}`}
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
-                                  className="divide-x divide-border/50 hover:bg-accent/5 transition-colors border-t border-dashed border-border/30"
+                                  className="border-t border-dashed border-border/40 bg-accent/[0.12] transition-colors hover:bg-accent/20"
                                 >
                                   <td className="p-2">
                                     <input
                                       {...register(
                                         `items.${index}.srNoDate.${subIndex}`,
                                       )}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-center text-[11px]"
+                                      className="w-full rounded-md border border-transparent bg-background/60 p-1.5 text-center text-[11px] transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="Date"
                                     />
                                   </td>
@@ -616,7 +624,7 @@ export const InvoiceEditor: React.FC = () => {
                                       {...register(
                                         `items.${index}.refNo.${subIndex}`,
                                       )}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-center text-[11px]"
+                                      className="w-full rounded-md border border-transparent bg-background/60 p-1.5 text-center text-[11px] transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="Ref"
                                     />
                                   </td>
@@ -626,7 +634,7 @@ export const InvoiceEditor: React.FC = () => {
                                         `items.${index}.subDescriptions.${sIdx}`,
                                       )}
                                       rows={1}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-[11px] uppercase placeholder:text-muted-foreground/30 resize-none leading-tight"
+                                      className="w-full resize-none rounded-md border border-transparent bg-background/60 p-1.5 text-[11px] uppercase leading-tight placeholder:text-muted-foreground/30 transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="Sub-entry description..."
                                     />
                                   </td>
@@ -635,69 +643,90 @@ export const InvoiceEditor: React.FC = () => {
                                       {...register(
                                         `items.${index}.sacHsn.${subIndex}`,
                                       )}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold uppercase text-[11px]"
+                                      className="w-full rounded-md border border-transparent bg-background/60 p-1.5 text-center font-mono text-[11px] font-bold uppercase transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="HSN"
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input
-                                      {...register(
-                                        `items.${index}.quantity.${subIndex}`,
-                                      )}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold text-[11px]"
+                                    <DelayedInput
+                                      value={
+                                        watchedItems[index]?.quantity?.[
+                                          subIndex
+                                        ] || 0
+                                      }
+                                      onSave={(val) =>
+                                        setValue(
+                                          `items.${index}.quantity.${subIndex}`,
+                                          parseNumeric(val),
+                                          { shouldDirty: true },
+                                        )
+                                      }
+                                      className="w-full rounded-md border border-transparent bg-background/60 p-1.5 text-center font-mono text-[11px] font-bold transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="Qty"
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input
-                                      {...register(
-                                        `items.${index}.rate.${subIndex}`,
-                                      )}
-                                      className="w-full bg-transparent border-none focus:ring-0 p-1 text-center font-mono font-bold text-[11px]"
+                                    <DelayedInput
+                                      value={
+                                        watchedItems[index]?.rate?.[subIndex] ||
+                                        0
+                                      }
+                                      onSave={(val) =>
+                                        setValue(
+                                          `items.${index}.rate.${subIndex}`,
+                                          parseNumeric(val),
+                                          { shouldDirty: true },
+                                        )
+                                      }
+                                      className="w-full rounded-md border border-transparent bg-background/60 p-1.5 text-center font-mono text-[11px] font-bold transition-all hover:border-primary-500/10 focus:border-primary-500/30 focus:ring-2 focus:ring-primary-500/10"
                                       placeholder="Rate"
                                     />
                                   </td>
-                                  <td className="p-2 text-right font-mono font-black pr-2 text-[11px]">
-                                    {(
-                                      calculations?.items[index]?.amount[
-                                        subIndex
-                                      ] || 0
-                                    ).toFixed(2)}
-                                  </td>
-                                  {taxMode === "GST" ? (
+                                  {showTaxColumns && (
                                     <>
-                                      <td className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                      <td className="p-2 pr-2 text-right font-mono text-[11px] font-black">
                                         {(
-                                          calculations?.items[index]
-                                            ?.cgstAmount[subIndex] || 0
+                                          calculations?.items[index]?.amount[
+                                            subIndex
+                                          ] || 0
                                         ).toFixed(2)}
                                       </td>
-                                      <td className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                      {taxMode === "GST" ? (
+                                        <>
+                                          <td className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                            {(
+                                              calculations?.items[index]
+                                                ?.cgstAmount[subIndex] || 0
+                                            ).toFixed(2)}
+                                          </td>
+                                          <td className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]">
+                                            {(
+                                              calculations?.items[index]
+                                                ?.sgstAmount[subIndex] || 0
+                                            ).toFixed(2)}
+                                          </td>
+                                        </>
+                                      ) : (
+                                        <td
+                                          className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]"
+                                          colSpan={2}
+                                        >
+                                          {(
+                                            calculations?.items[index]?.igstAmount[
+                                              subIndex
+                                            ] || 0
+                                          ).toFixed(2)}
+                                        </td>
+                                      )}
+                                      <td className="p-2 text-right font-mono font-black pr-2 text-[11px] text-primary-600">
                                         {(
-                                          calculations?.items[index]
-                                            ?.sgstAmount[subIndex] || 0
+                                          calculations?.items[index]?.totalWithGST[
+                                            subIndex
+                                          ] || 0
                                         ).toFixed(2)}
                                       </td>
                                     </>
-                                  ) : (
-                                    <td
-                                      className="p-2 text-right font-mono font-bold text-muted-foreground text-[10px]"
-                                      colSpan={2}
-                                    >
-                                      {(
-                                        calculations?.items[index]?.igstAmount[
-                                          subIndex
-                                        ] || 0
-                                      ).toFixed(2)}
-                                    </td>
                                   )}
-                                  <td className="p-2 text-right font-mono font-black pr-2 text-[11px] text-primary-600">
-                                    {(
-                                      calculations?.items[index]?.totalWithGST[
-                                        subIndex
-                                      ] || 0
-                                    ).toFixed(2)}
-                                  </td>
                                   <td className="p-2 text-center">
                                     <button
                                       type="button"
@@ -963,41 +992,32 @@ export const InvoiceEditor: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setValue(
-                                            "customerName",
-                                            preset.customerName,
-                                          );
-                                          setValue(
-                                            "plantName",
-                                            preset.plantName,
-                                          );
-                                          setValue(
-                                            "customerAddress",
-                                            preset.customerAddress,
-                                          );
-                                          setValue(
-                                            "customerGST",
-                                            preset.customerGST,
-                                          );
-                                          setValue(
-                                            "vendorCode",
-                                            preset.vendorCode || "",
-                                          );
-                                          setValue(
-                                            "orderNumber",
-                                            preset.orderNumber ||
+                                          const updateData = {
+                                            customerName: preset.customerName,
+                                            plantName: preset.plantName,
+                                            customerAddress: preset.customerAddress,
+                                            customerGST: preset.customerGST,
+                                            vendorCode: preset.vendorCode || "",
+                                            orderNumber:
+                                              preset.orderNumber ||
                                               "GEMC-511687712601789",
-                                          );
-                                          setValue(
-                                            "outlineAgreement",
-                                            preset.outlineAgreement ||
+                                            outlineAgreement:
+                                              preset.outlineAgreement ||
                                               "4600002141",
-                                          );
-                                          setValue(
-                                            "gemSellerId",
-                                            preset.gemSellerId ||
+                                            gemSellerId:
+                                              preset.gemSellerId ||
                                               "RXON210002099996",
+                                          };
+
+                                          Object.entries(updateData).forEach(
+                                            ([key, value]) => {
+                                              setValue(key as any, value, {
+                                                shouldDirty: true,
+                                                shouldValidate: true,
+                                              });
+                                            },
                                           );
+
                                           setShowPresetMenu(false);
                                           setPresetSearch("");
                                         }}
@@ -1418,21 +1438,7 @@ export const InvoiceEditor: React.FC = () => {
       <PrintPreview
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
-        invoice={
-          {
-            ...watch(),
-            ...(calculations
-              ? {
-                  totalTaxableValue: calculations.totals.totalTaxableValue,
-                  totalCGST: calculations.totals.totalCGST,
-                  totalSGST: calculations.totals.totalSGST,
-                  totalIGST: calculations.totals.totalIGST,
-                  grandTotal: calculations.totals.grandTotal,
-                  amountInWords: calculations.amountInWords,
-                }
-              : {}),
-          } as Invoice
-        }
+        invoice={getCalculatedInvoiceData()}
         company={companyDetails}
         onUpdateInvoice={(updates) => {
           Object.entries(updates).forEach(([key, value]) => {

@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GeM Helper</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-primary: #090d16;
+        --bg-secondary: rgba(17, 24, 39, 0.7);
+        --bg-tertiary: rgba(31, 41, 55, 0.5);
+        --bg-card: rgba(30, 41, 59, 0.4);
+        --border-subtle: rgba(255, 255, 255, 0.08);
+        --border-medium: rgba(255, 255, 255, 0.15);
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --text-muted: #6b7280;
+        --accent-blue: #38bdf8;
+        --accent-green: #34d399;
+        --accent-amber: #fbbf24;
+        --accent-red: #f87171;
+        --accent-purple: #c084fc;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--text-primary);
+        background: var(--bg-primary);
+        height: 100vh;
+        overflow: hidden;
+        font-size: 14px;
+      }
+
+      .window {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-medium);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        position: relative;
+        background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 60%),
+                    radial-gradient(circle at bottom left, rgba(192, 132, 252, 0.05), transparent 50%);
+        backdrop-filter: blur(20px);
+      }
+
+      /* === TITLEBAR === */
+      .titlebar {
+        -webkit-app-region: drag;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        background: rgba(15, 23, 42, 0.85);
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        z-index: 10;
+      }
+
+      .title-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .title {
+        font-weight: 700;
+        font-size: 0.875rem;
+        background: linear-gradient(135deg, #38bdf8, #c084fc);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: 0.5px;
+      }
+
+      .badge {
+        font-size: 0.6875rem;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      .badge.step {
+        background: rgba(56, 189, 248, 0.15);
+        color: #7dd3fc;
+        border: 1px solid rgba(56, 189, 248, 0.2);
+      }
+
+      .badge.status {
+        background: rgba(156, 163, 175, 0.1);
+        color: var(--text-secondary);
+        border: 1px solid rgba(156, 163, 175, 0.15);
+        transition: all var(--transition-fast);
+      }
+
+      .badge.status.active {
+        background: rgba(52, 211, 153, 0.15);
+        color: #34d399;
+        border: 1px solid rgba(52, 211, 153, 0.2);
+      }
+
+      .window-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        -webkit-app-region: no-drag;
+      }
+
+      .win-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        width: 24px;
+        height: 24px;
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all var(--transition-fast);
+      }
+
+      .win-btn:hover {
+        background: var(--border-subtle);
+        color: var(--text-primary);
+      }
+
+      .win-btn.close:hover {
+        background: #ef4444;
+        color: white;
+      }
+
+      /* === CONTENT AREA === */
+      .content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 14px;
+        gap: 14px;
+        overflow-y: auto;
+      }
+
+      /* === STATUS CARDS === */
+      .status-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .status-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        transition: border-color var(--transition-fast);
+      }
+
+      .status-card.active {
+        border-color: rgba(52, 211, 153, 0.3);
+      }
+
+      .card-label {
+        font-size: 0.6875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .card-value {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .card-value.url-preview {
+        font-family: monospace;
+        color: var(--accent-blue);
+      }
+
+      /* === DYNAMIC PANELS === */
+      .panel {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        overflow: hidden;
+      }
+
+      .panel-title {
+        font-size: 0.9375rem;
+        font-weight: 700;
+        border-bottom: 1px solid var(--border-subtle);
+        padding-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .panel-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      /* === INVOICE INFO === */
+      .invoice-info-card {
+        background: rgba(56, 189, 248, 0.04);
+        border: 1px dashed rgba(56, 189, 248, 0.2);
+        border-radius: var(--radius-md);
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 12px;
+        font-size: 0.8125rem;
+      }
+
+      .info-label {
+        color: var(--text-secondary);
+      }
+
+      .info-val {
+        font-weight: 600;
+        text-align: right;
+      }
+
+      /* === STEPPER === */
+      .stepper {
+        display: flex;
+        justify-content: space-between;
+        background: var(--bg-tertiary);
+        border-radius: 999px;
+        padding: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .step-dot {
+        flex: 1;
+        text-align: center;
+        padding: 4px 6px;
+        border-radius: 999px;
+        color: var(--text-muted);
+        transition: all var(--transition-fast);
+      }
+
+      .step-dot.active {
+        background: var(--accent-blue);
+        color: var(--bg-primary);
+      }
+
+      .step-dot.done {
+        color: var(--accent-green);
+      }
+
+      /* === COMPONENT FORMS & LISTS === */
+      .field-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .field-row {
+        background: var(--bg-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transition: border-color var(--transition-fast);
+      }
+
+      .field-row.filled {
+        border-color: rgba(52, 211, 153, 0.2);
+        background: rgba(52, 211, 153, 0.02);
+      }
+
+      .field-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .field-lbl {
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .field-src {
+        font-size: 0.625rem;
+        color: var(--accent-green);
+        background: rgba(52, 211, 153, 0.1);
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+
+      .field-src.custom {
+        color: var(--accent-purple);
+        background: rgba(192, 132, 252, 0.1);
+      }
+
+      .field-input-group {
+        display: flex;
+        gap: 6px;
+      }
+
+      .field-input {
+        flex: 1;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 6px 10px;
+        color: var(--text-primary);
+        font-size: 0.8125rem;
+        outline: none;
+        transition: border-color var(--transition-fast);
+      }
+
+      .field-input:focus {
+        border-color: var(--accent-blue);
+      }
+
+      .row-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        border-radius: var(--radius-sm);
+        width: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+      }
+
+      .row-btn:hover {
+        background: var(--border-medium);
+        border-color: var(--text-secondary);
+      }
+
+      .row-btn.save-btn:hover {
+        color: var(--accent-amber);
+        border-color: rgba(251, 191, 36, 0.3);
+      }
+
+      /* === BUTTONS === */
+      .btn {
+        width: 100%;
+        padding: 10px 16px;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: 0.875rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all var(--transition-fast);
+        border: 1px solid transparent;
+      }
+
+      .btn.primary {
+        background: var(--accent-blue);
+        color: var(--bg-primary);
+      }
+
+      .btn.primary:hover:not(:disabled) {
+        background: #7dd3fc;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+      }
+
+      .btn.success {
+        background: var(--accent-green);
+        color: var(--bg-primary);
+      }
+
+      .btn.success:hover:not(:disabled) {
+        background: #6ee7b7;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 211, 153, 0.2);
+      }
+
+      .btn.secondary {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--border-subtle);
+        color: var(--text-primary);
+      }
+
+      .btn.secondary:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: var(--border-medium);
+      }
+
+      .btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* === LOGS SECTION === */
+      .logs-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 10px 14px;
+        height: 120px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      .logs-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .logs-container {
+        flex: 1;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 0.6875rem;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding-right: 4px;
+      }
+
+      .log-entry {
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .log-entry.error { color: var(--accent-red); }
+      .log-entry.success { color: var(--accent-green); }
+      .log-entry.warn { color: var(--accent-amber); }
+
+      /* === SCROLLBARS === */
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border-medium);
+        border-radius: 99px;
+      }
+
+      /* === TOAST === */
+      .toast-container {
+        position: fixed;
+        bottom: 140px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 100;
+        pointer-events: none;
+      }
+
+      .toast {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid var(--border-medium);
+        border-radius: var(--radius-md);
+        padding: 8px 14px;
+        font-size: 0.75rem;
+        color: var(--text-primary);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        animation: toastIn 0.3s ease-out;
+        backdrop-filter: blur(8px);
+      }
+
+      @keyframes toastIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="window">
+      <!-- Titlebar -->
+      <div class="titlebar">
+        <div class="title-group">
+          <div class="title">GeM Assistant</div>
+          <span class="badge step" id="stepBadge">Step 0/6</span>
+          <span class="badge status" id="connBadge">● Off</span>
+        </div>
+        <div class="window-controls">
+          <button class="win-btn close" id="closeBtn" title="Close">×</button>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="content">
+        <!-- Live HUD Status -->
+        <div class="status-grid">
+          <div class="status-card" id="statusCard">
+            <div class="card-label">Workflow status</div>
+            <div class="card-value" id="currentStatus">Offline</div>
+          </div>
+          <div class="status-card">
+            <div class="card-label">📄 Browser Page</div>
+            <div class="card-value url-preview" id="currentUrl">Not connected</div>
+          </div>
+        </div>
+
+        <!-- Dynamic Stepper -->
+        <div class="stepper" id="stepper">
+          <div class="step-dot" id="dot-login">Login</div>
+          <div class="step-dot" id="dot-match">Match</div>
+          <div class="step-dot" id="dot-mapping">Map</div>
+          <div class="step-dot" id="dot-review">Review</div>
+          <div class="step-dot" id="dot-done">Done</div>
+        </div>
+
+        <!-- Interactive Panels -->
+        <div class="panel" id="mainPanel">
+          <!-- Loaded dynamically -->
+        </div>
+
+        <!-- Console logs drawer -->
+        <div class="logs-section">
+          <div class="logs-header">
+            <span>Session logs</span>
+            <span style="font-size: 0.625rem; font-weight: normal; cursor: pointer; color: var(--accent-blue);" id="clearLogs">Clear</span>
+          </div>
+          <div class="logs-container" id="logsContainer">
+            <div style="color: var(--text-muted); font-style: italic;">No logs yet. Select invoice in PEIPL.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+      // State
+      let activeSession = null;
+      let browserState = { isOpen: false, currentUrl: '' };
+      let localFieldValues = {}; // Track local changes to fields during mapping
+
+      // DOM Cache
+      const els = {
+        stepBadge: document.getElementById('stepBadge'),
+        connBadge: document.getElementById('connBadge'),
+        currentStatus: document.getElementById('currentStatus'),
+        currentUrl: document.getElementById('currentUrl'),
+        statusCard: document.getElementById('statusCard'),
+        mainPanel: document.getElementById('mainPanel'),
+        logsContainer: document.getElementById('logsContainer'),
+        clearLogs: document.getElementById('clearLogs'),
+        closeBtn: document.getElementById('closeBtn'),
+        toastContainer: document.getElementById('toastContainer'),
+        stepper: document.getElementById('stepper')
+      };
+
+      // Helper functions
+      const showToast = (message, type = 'info') => {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+        els.toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 2500);
+      };
+
+      const getStepIndex = (status) => {
+        const order = ['login', 'order-search', 'field-mapping', 'review', 'completed', 'failed'];
+        return order.indexOf(status);
+      };
+
+      const updateSharedSession = async (updates) => {
+        try {
+          if (!activeSession) return;
+          const updated = { ...activeSession, ...updates };
+          await window.electron.setStoreValue('activeGeMSession', updated);
+          activeSession = updated;
+          return updated;
+        } catch (e) {
+          console.error('Failed to update shared session:', e);
+        }
+      };
+
+      const addSessionLog = async (msg) => {
+        try {
+          if (!activeSession) return;
+          const logText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+          const updatedLogs = [...activeSession.logs, logText];
+          await updateSharedSession({ logs: updatedLogs });
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      const addSessionError = async (err) => {
+        try {
+          if (!activeSession) return;
+          const errText = `[${new Date().toLocaleTimeString()}] Error: ${err}`;
+          const updatedErrors = [...activeSession.errors, errText];
+          const updatedLogs = [...activeSession.logs, errText];
+          await updateSharedSession({ errors: updatedErrors, logs: updatedLogs });
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      // Render functions
+      const renderLogs = (logs) => {
+        if (!logs || logs.length === 0) {
+          els.logsContainer.innerHTML = '<div style="color: var(--text-muted); font-style: italic;">No logs yet.</div>';
+          return;
+        }
+        els.logsContainer.innerHTML = logs.slice(-15).reverse()
+          .map(log => {
+            let cls = '';
+            if (log.includes('✓') || log.includes('success')) cls = 'success';
+            if (log.includes('Error') || log.includes('✗') || log.includes('Could not')) cls = 'error';
+            if (log.includes('Warning') || log.includes('⚠')) cls = 'warn';
+            return `<div class="log-entry ${cls}">${escapeHtml(log)}</div>`;
+          }).join('');
+      };
+
+      const escapeHtml = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      };
+
+      const updateStepper = (status) => {
+        const idx = getStepIndex(status);
+        const steps = ['dot-login', 'dot-match', 'dot-mapping', 'dot-review', 'dot-done'];
+        
+        steps.forEach((id, i) => {
+          const dot = document.getElementById(id);
+          if (!dot) return;
+          
+          dot.className = 'step-dot';
+          if (i < idx && status !== 'failed') {
+            dot.classList.add('done');
+          } else if (i === idx) {
+            dot.classList.add('active');
+          }
+        });
+      };
+
+      // Smart Field Mapping Rules
+      const runSmartMapping = async (fields, data) => {
+        const mappings = [];
+        for (const field of fields) {
+          const label = field.label || field.name;
+          const labelLower = label.toLowerCase();
+          
+          let mappedValue = '';
+          let mappedFrom = undefined;
+          let category = 'required';
+
+          // Smart pattern rules
+          if (
+            labelLower.includes('invoice') && 
+            (labelLower.includes('num') || labelLower.includes('no') || labelLower.includes('id') || labelLower.includes('ref'))
+          ) {
+            mappedValue = data.invoiceNumber;
+            mappedFrom = 'invoiceNumber';
+            category = 'auto-filled';
+          } else if (labelLower.includes('invoice') && labelLower.includes('date')) {
+            mappedValue = data.invoiceDate;
+            mappedFrom = 'invoiceDate';
+            category = 'auto-filled';
+          } else if (labelLower.includes('gst') || labelLower.includes('gstin')) {
+            mappedValue = data.gstNumber;
+            mappedFrom = 'gstNumber';
+            category = 'auto-filled';
+          } else if (
+            labelLower.includes('amount') || 
+            labelLower.includes('total') || 
+            labelLower.includes('value') || 
+            labelLower.includes('price')
+          ) {
+            mappedValue = String(data.amount);
+            mappedFrom = 'amount';
+            category = 'auto-filled';
+          } else if (labelLower.includes('buyer') || labelLower.includes('consignee')) {
+            mappedValue = data.buyerName;
+            mappedFrom = 'buyerName';
+            category = 'auto-filled';
+          } else if (
+            (labelLower.includes('order') || labelLower.includes('contract') || labelLower.includes('po')) && 
+            (labelLower.includes('num') || labelLower.includes('no') || labelLower.includes('id') || labelLower.includes('ref'))
+          ) {
+            mappedValue = data.orderNumber;
+            mappedFrom = 'orderNumber';
+            category = 'auto-filled';
+          } else if (
+            labelLower.includes('plant') || 
+            labelLower.includes('department') || 
+            labelLower.includes('ministry') || 
+            labelLower.includes('location')
+          ) {
+            mappedValue = data.plantName;
+            mappedFrom = 'plantName';
+            category = 'auto-filled';
+          } else {
+            // Fall back to saved values
+            try {
+              const saved = await window.electron.gemGetSavedFieldValue(label);
+              if (saved && saved.success && saved.value) {
+                mappedValue = saved.value.value;
+                category = 'user-defined';
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          }
+
+          if (mappedValue) {
+            try {
+              await window.electron.gemFillField(field.selector, mappedValue);
+            } catch (err) {
+              console.error(err);
+            }
+          }
+
+          mappings.push({
+            gemFieldLabel: label,
+            gemFieldSelector: field.selector,
+            mappedFrom,
+            value: mappedValue,
+            category,
+            isRequired: true,
+            isFilled: !!mappedValue
+          });
+        }
+        return mappings;
+      };
+
+      // Step Render Blocks
+      const renderNoSession = () => {
+        els.stepBadge.textContent = 'Step 0/6';
+        els.currentStatus.textContent = 'Inactive';
+        els.statusCard.className = 'status-card';
+        updateStepper('');
+
+        els.mainPanel.innerHTML = `
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; color: var(--text-secondary); padding: 20px;">
+            <div style="font-size: 2.5rem; filter: grayscale(0.2);">📄</div>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary);">No Active Upload Session</div>
+            <div style="font-size: 0.8125rem; max-width: 250px; line-height: 1.4;">Select an invoice in the PEIPL Bill Manager window to activate this assistant.</div>
+            <button class="btn secondary" id="btnCheckChrome" style="margin-top: 10px;">🔍 Check Chrome Connection</button>
+          </div>
+        `;
+
+        document.getElementById('btnCheckChrome').addEventListener('click', async () => {
+          const res = await window.electron.gemCheckChromeDebugging();
+          if (res && res.chromeRunning) {
+            showToast('Chrome Debugger port 9222 detected!', 'success');
+          } else {
+            showToast('Could not reach Chrome debugging port', 'error');
+          }
+        });
+      };
+
+      const renderActiveStep = (session) => {
+        updateStepper(session.status);
+        
+        switch (session.status) {
+          case 'login':
+            renderLoginStep(session);
+            break;
+          case 'order-search':
+            renderOrderSearchStep(session);
+            break;
+          case 'field-mapping':
+            renderFieldMappingStep(session);
+            break;
+          case 'review':
+            renderReviewStep(session);
+            break;
+          case 'completed':
+            renderCompletedStep(session, true);
+            break;
+          case 'failed':
+            renderCompletedStep(session, false);
+            break;
+        }
+      };
+
+      // 1. LOGIN STEP PANEL
+      const renderLoginStep = (session) => {
+        els.mainPanel.innerHTML = `
+          <div class="panel-title">🔑 User Authentication</div>
+          <div class="panel-body">
+            <div class="invoice-info-card">
+              <div class="card-label" style="color: var(--accent-blue)">Extracted Invoice</div>
+              <div class="info-grid">
+                <span class="info-label">Invoice No:</span><span class="info-val">${session.selectedInvoiceNumber}</span>
+                <span class="info-label">Order target:</span><span class="info-val">${session.extractedData?.orderNumber || 'Pending'}</span>
+              </div>
+            </div>
+            <p style="font-size: 0.8125rem; line-height: 1.4; color: var(--text-secondary);">
+              Please log in to your GeM Portal account in the browser. The assistant is listening for successful fulfillment dashboard navigation.
+            </p>
+            <div style="flex: 1;"></div>
+            <button class="btn primary" id="btnWaitLogin">🔐 Wait For Login Completion</button>
+            <button class="btn secondary" id="btnForceLogin">Skip Login (If logged in)</button>
+          </div>
+        `;
+
+        const btnWait = document.getElementById('btnWaitLogin');
+        btnWait.addEventListener('click', async () => {
+          btnWait.disabled = true;
+          btnWait.textContent = '⏳ Waiting for SSO Login...';
+          await addSessionLog('Waiting for user SSO login...');
+          
+          const result = await window.electron.gemWaitForLogin(300000);
+          if (result.success) {
+            await addSessionLog('✓ SSO Login completed. Navigating to orders...');
+            showToast('Login detected!', 'success');
+            await updateSharedSession({ status: 'order-search' });
+          } else {
+            await addSessionError(result.error || 'Login verification failed');
+            showToast('Login wait failed', 'error');
+            btnWait.disabled = false;
+            btnWait.textContent = '🔐 Wait For Login Completion';
+          }
+        });
+
+        document.getElementById('btnForceLogin').addEventListener('click', async () => {
+          await addSessionLog('User manually skipped login validation');
+          await updateSharedSession({ status: 'order-search' });
+        });
+      };
+
+      // 2. ORDER SEARCH STEP PANEL
+      const renderOrderSearchStep = (session) => {
+        const orderNo = session.extractedData?.orderNumber || session.selectedOrderNumber;
+        els.mainPanel.innerHTML = `
+          <div class="panel-title">📋 Contract Matching</div>
+          <div class="panel-body">
+            <div class="invoice-info-card">
+              <div class="info-grid">
+                <span class="info-label">Target Contract:</span><span class="info-val" style="color: var(--accent-amber)">${orderNo}</span>
+                <span class="info-label">Buyer:</span><span class="info-val">${session.extractedData?.buyerName || '—'}</span>
+                <span class="info-label">Amount:</span><span class="info-val">₹${session.extractedData?.amount || '—'}</span>
+              </div>
+            </div>
+            
+            <p style="font-size: 0.8125rem; line-height: 1.4; color: var(--text-secondary)">
+              Click find below to navigate to orders and automatically process the target contract in the GeM workspace.
+            </p>
+
+            <div id="matchingHUD" style="display: none; padding: 12px; background: linear-gradient(135deg, rgba(56,189,248,0.08), rgba(192,132,252,0.05)); border-radius: 6px; border: 1px solid var(--border-subtle);">
+              <div style="margin-bottom: 8px; font-size: 0.8125rem; color: var(--text-primary); line-height: 1.5;">
+                <div id="hudStep1" style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+                  <span id="step1Icon">⏳</span> <span id="step1Text">Navigating to orders...</span>
+                </div>
+                <div id="hudStep2" style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px; opacity: 0.5;">
+                  <span id="step2Icon">⏳</span> <span id="step2Text">Searching for contract...</span>
+                </div>
+                <div id="hudStep3" style="display: flex; gap: 8px; align-items: center; opacity: 0.5;">
+                  <span id="step3Icon">⏳</span> <span id="step3Text">Processing order...</span>
+                </div>
+              </div>
+              <div id="hudRetry" style="display: none; margin-top: 8px;">
+                <button class="btn secondary" id="btnRetry" style="width: 100%; font-size: 0.75rem; padding: 6px;">🔄 Retry Process</button>
+              </div>
+            </div>
+
+            <div style="margin-top: 12px; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 6px; border: 1px dashed var(--border-subtle);">
+              <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 6px;">📍 Manual Override (if auto-detect fails)</div>
+              <div style="display: flex; gap: 6px;">
+                <input id="manualOrderNo" type="text" placeholder="GEMC-..." style="flex: 1; padding: 6px 8px; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-primary); font-size: 0.8125rem;">
+                <button class="btn secondary" id="btnManualProcess" style="padding: 6px 12px; font-size: 0.75rem;">Use ID</button>
+              </div>
+            </div>
+
+            <div style="flex: 1;"></div>
+            <button class="btn primary" id="btnMatchOrder" style="width: 100%;">🔍 Find & Match Order</button>
+          </div>
+        `;
+
+        const btnMatch = document.getElementById('btnMatchOrder');
+        const hud = document.getElementById('matchingHUD');
+        const hudRetryDiv = document.getElementById('hudRetry');
+        const manualInput = document.getElementById('manualOrderNo');
+        const btnManual = document.getElementById('btnManualProcess');
+        const btnRetry = document.getElementById('btnRetry');
+
+        let isProcessing = false;
+
+        const processOrderFlow = async (targetOrderNo) => {
+          if (isProcessing || !targetOrderNo) return;
+          isProcessing = true;
+          btnMatch.disabled = true;
+          btnManual.disabled = true;
+          hud.style.display = 'block';
+          hudRetryDiv.style.display = 'none';
+          
+          // Reset HUD
+          document.getElementById('step1Icon').textContent = '⏳';
+          document.getElementById('step2Icon').textContent = '⏳';
+          document.getElementById('step3Icon').textContent = '⏳';
+          document.getElementById('step1Text').textContent = 'Navigating to orders...';
+          document.getElementById('step2Text').textContent = 'Searching for contract...';
+          document.getElementById('step3Text').textContent = 'Processing order...';
+          document.getElementById('hudStep2').style.opacity = '0.5';
+          document.getElementById('hudStep3').style.opacity = '0.5';
+          
+          try {
+            // Step 1: Navigate
+            await addSessionLog(`Finding order: ${targetOrderNo}`);
+            const navRes = await window.electron.gemNavigateToOrders();
+            
+            if (!navRes.success) {
+              document.getElementById('step1Icon').textContent = '❌';
+              document.getElementById('step1Text').textContent = `Navigation failed: ${navRes.error || 'Unknown error'}`;
+              await addSessionError(`Navigation: ${navRes.error || 'Failed navigation'}`);
+              hudRetryDiv.style.display = 'block';
+              isProcessing = false;
+              btnMatch.disabled = false;
+              btnManual.disabled = false;
+              return;
+            }
+
+            document.getElementById('step1Icon').textContent = '✓';
+            document.getElementById('hudStep2').style.opacity = '1';
+            await new Promise(r => setTimeout(r, 300));
+
+            // Step 2: Search - extract ALL orders first
+            await addSessionLog(`Extracting all contracts from page...`);
+            const extractRes = await window.electron.gemExtractAllOrders();
+            
+            if (!extractRes.success || !extractRes.orders || extractRes.orders.length === 0) {
+              document.getElementById('step2Icon').textContent = '❌';
+              document.getElementById('step2Text').textContent = `No contracts on page`;
+              await addSessionError(`No contracts found on page`);
+              hudRetryDiv.style.display = 'block';
+              isProcessing = false;
+              btnMatch.disabled = false;
+              btnManual.disabled = false;
+              return;
+            }
+
+            await addSessionLog(`Searching for: ${targetOrderNo} among ${extractRes.orders.length} contracts...`);
+            
+            const matchRes = await window.electron.gemFindMatchingOrder(targetOrderNo);
+            
+            if (!matchRes.success || !matchRes.order) {
+              document.getElementById('step2Icon').textContent = '❌';
+              document.getElementById('step2Text').textContent = `Not found: ${matchRes.error || 'Contract missing'}`;
+              await addSessionError(`Order not found: ${matchRes.error || 'No matching order'}`);
+              hudRetryDiv.style.display = 'block';
+              isProcessing = false;
+              btnMatch.disabled = false;
+              btnManual.disabled = false;
+              return;
+            }
+
+            document.getElementById('step2Icon').textContent = '✓';
+            document.getElementById('step2Text').textContent = `Found: ${matchRes.order.contractNumber}`;
+            document.getElementById('hudStep3').style.opacity = '1';
+            await new Promise(r => setTimeout(r, 300));
+
+            // Step 3: Process
+            await addSessionLog(`Processing contract: ${matchRes.order.contractNumber}...`);
+            const processRes = await window.electron.gemProcessOrder(matchRes.order);
+            
+            if (processRes.success) {
+              document.getElementById('step3Icon').textContent = '✓';
+              document.getElementById('step3Text').textContent = 'Contract processed!';
+              await addSessionLog(`✓ Order ${matchRes.order.contractNumber} ready for field mapping`);
+              showToast('Order ready! Auto-detecting fields...', 'success');
+              
+              await new Promise(r => setTimeout(r, 500));
+              
+              // Update shared session - move to field mapping
+              await updateSharedSession({
+                status: 'field-mapping',
+                selectedOrderNumber: matchRes.order.contractNumber,
+                matchedOrder: matchRes.order
+              });
+              
+              isProcessing = false;
+            } else {
+              document.getElementById('step3Icon').textContent = '❌';
+              document.getElementById('step3Text').textContent = `Process failed: ${processRes.error}`;
+              await addSessionError(`Process failed: ${processRes.error || 'Failed processing'}`);
+              hudRetryDiv.style.display = 'block';
+              isProcessing = false;
+              btnMatch.disabled = false;
+              btnManual.disabled = false;
+            }
+          } catch (err) {
+            console.error('processOrderFlow error:', err);
+            document.getElementById('step1Icon').textContent = '❌';
+            document.getElementById('step1Text').textContent = 'Error occurred';
+            await addSessionError(`Unexpected: ${err.message}`);
+            hudRetryDiv.style.display = 'block';
+            isProcessing = false;
+            btnMatch.disabled = false;
+            btnManual.disabled = false;
+          }
+        };
+        
+        btnMatch.addEventListener('click', async () => {
+          if (!isProcessing) {
+            await processOrderFlow(orderNo);
+          }
+        });
+
+        btnManual.addEventListener('click', async () => {
+          const manualNo = manualInput.value.trim();
+          if (!manualNo) {
+            showToast('Please enter a contract number (e.g., GEMC-...)', 'warn');
+            manualInput.focus();
+            return;
+          }
+          if (!isProcessing) {
+            await processOrderFlow(manualNo);
+          }
+        });
+
+        if (btnRetry) {
+          btnRetry.addEventListener('click', async () => {
+            isProcessing = false;
+            await processOrderFlow(manualInput.value.trim() || orderNo);
+          });
+        }
+        
+        // Allow Enter key in manual input to trigger process
+        manualInput.addEventListener('keypress', async (e) => {
+          if (e.key === 'Enter' && !isProcessing) {
+            const manualNo = manualInput.value.trim();
+            if (manualNo) {
+              await processOrderFlow(manualNo);
+            }
+          }
+        });
+      };
+
+      // 3. FIELD MAPPING STEP PANEL
+      const renderFieldMappingStep = (session) => {
+        const mappings = session.fieldMappings || [];
+        const unfilledCount = mappings.filter(m => !m.isFilled).length;
+
+        let mappingListHtml = '';
+        if (mappings.length > 0) {
+          mappingListHtml = `
+            <div class="field-list">
+              ${mappings.map((m, idx) => {
+                const val = localFieldValues[m.gemFieldLabel] !== undefined ? localFieldValues[m.gemFieldLabel] : (m.value || '');
+                return `
+                  <div class="field-row ${m.isFilled ? 'filled' : ''}">
+                    <div class="field-header">
+                      <span class="field-lbl">${escapeHtml(m.gemFieldLabel)}</span>
+                      <span class="field-src ${m.category !== 'auto-filled' ? 'custom' : ''}">${m.category}</span>
+                    </div>
+                    <div class="field-input-group">
+                      <input type="text" class="field-input" data-label="${m.gemFieldLabel}" value="${escapeHtml(val)}" placeholder="Value..." />
+                      <button class="row-btn fill-btn" data-selector="${m.gemFieldSelector}" data-label="${m.gemFieldLabel}" title="Re-Fill field in browser">⚡</button>
+                      <button class="row-btn save-btn" data-label="${m.gemFieldLabel}" title="Save value for next time">💾</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+        } else {
+          mappingListHtml = `
+            <div style="text-align: center; color: var(--text-secondary); padding: 15px 0;">
+              <div style="margin-bottom: 10px;">🔍 Auto-scanning form fields...</div>
+              <div style="font-size: 0.75rem;">Detecting inputs from the contract form</div>
+            </div>
+          `;
+        }
+
+        els.mainPanel.innerHTML = `
+          <div class="panel-title">📝 Smart Field Mapping</div>
+          <div class="panel-body">
+            <div class="invoice-info-card">
+              <div class="info-grid">
+                <span class="info-label">Active Order:</span><span class="info-val">${session.selectedOrderNumber}</span>
+                <span class="info-label">Mappings:</span><span class="info-val">${mappings.length - unfilledCount}/${mappings.length} filled</span>
+              </div>
+            </div>
+
+            ${mappingListHtml}
+
+            <div style="flex: 1;"></div>
+            ${mappings.length === 0 ? `
+              <button class="btn primary" id="btnDetectFields" style="width: 100%;">⚡ Detect & Map Fields</button>
+            ` : `
+              <div style="display: flex; gap: 8px;">
+                <button class="btn secondary" id="btnDetectFields" style="flex: 1;">🔄 Redetect</button>
+                <button class="btn success" id="btnContinueReview" style="flex: 1.5;" ${unfilledCount > 0 ? 'disabled' : ''}>✓ Continue to Review</button>
+              </div>
+            `}
+          </div>
+        `;
+
+        // Add Listeners
+        const btnDetect = document.getElementById('btnDetectFields');
+        if (btnDetect) {
+          const originalText = btnDetect.textContent;
+          
+          const performDetection = async () => {
+            btnDetect.disabled = true;
+            const prevText = btnDetect.textContent;
+            btnDetect.textContent = '⏳ Scanning...';
+            
+            try {
+              await addSessionLog('Detecting form fields from portal...');
+              const result = await window.electron.gemDetectInvoiceFields();
+              
+              if (!result.success || !result.fields) {
+                await addSessionError(`Field detection: ${result.error || 'No fields found'}`);
+                showToast('Could not detect fields', 'error');
+                btnDetect.disabled = false;
+                btnDetect.textContent = prevText;
+                return;
+              }
+
+              await addSessionLog(`✓ Found ${result.fields.length} form fields`);
+              
+              // Run the local smart auto-fill
+              const newMappings = await runSmartMapping(result.fields, session.extractedData);
+              const filledCount = newMappings.filter(m => m.isFilled).length;
+              
+              await addSessionLog(`✓ Auto-mapped ${filledCount}/${newMappings.length} fields`);
+              await updateSharedSession({ fieldMappings: newMappings });
+              showToast(`Mapped ${filledCount}/${newMappings.length} fields`, 'success');
+              
+              // Re-render to show mappings
+              renderFieldMappingStep({ ...session, fieldMappings: newMappings });
+            } catch (err) {
+              await addSessionError(`Detection error: ${err.message}`);
+              showToast('Detection failed', 'error');
+              btnDetect.disabled = false;
+              btnDetect.textContent = prevText;
+            }
+          };
+          
+          btnDetect.addEventListener('click', performDetection);
+          
+          // Auto-detect on first render if no mappings yet
+          if (mappings.length === 0) {
+            setTimeout(() => performDetection(), 300);
+          }
+        }
+
+        const btnContinue = document.getElementById('btnContinueReview');
+        if (btnContinue) {
+          btnContinue.addEventListener('click', async () => {
+            await addSessionLog('✓ Field mappings accepted. Moving to review...');
+            await updateSharedSession({ status: 'review' });
+          });
+        }
+
+        // Row edits
+        const inputs = els.mainPanel.querySelectorAll('.field-input');
+        inputs.forEach(input => {
+          input.addEventListener('change', async (e) => {
+            const label = e.target.dataset.label;
+            const val = e.target.value;
+            localFieldValues[label] = val;
+            
+            // Re-fill browser immediately
+            const mappingItem = mappings.find(m => m.gemFieldLabel === label);
+            if (mappingItem && mappingItem.gemFieldSelector) {
+              await window.electron.gemFillField(mappingItem.gemFieldSelector, val);
+            }
+            
+            // Save state update to shared session
+            const updatedMappings = mappings.map(m => 
+              m.gemFieldLabel === label ? { ...m, value: val, isFilled: !!val, category: 'user-defined' } : m
+            );
+            await updateSharedSession({ fieldMappings: updatedMappings });
+          });
+        });
+
+        // Row action buttons
+        els.mainPanel.querySelectorAll('.fill-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const btnEl = e.currentTarget;
+            const label = btnEl.dataset.label;
+            const selector = btnEl.dataset.selector;
+            const val = localFieldValues[label] !== undefined ? localFieldValues[label] : (mappings.find(m => m.gemFieldLabel === label)?.value || '');
+            
+            if (selector && val) {
+              btnEl.disabled = true;
+              const res = await window.electron.gemFillField(selector, val);
+              if (res.success) {
+                showToast('Filled field!', 'success');
+              } else {
+                showToast('Failed to fill', 'error');
+              }
+              btnEl.disabled = false;
+            }
+          });
+        });
+
+        els.mainPanel.querySelectorAll('.save-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const btnEl = e.currentTarget;
+            const label = btnEl.dataset.label;
+            const val = localFieldValues[label] !== undefined ? localFieldValues[label] : (mappings.find(m => m.gemFieldLabel === label)?.value || '');
+            
+            if (val) {
+              btnEl.disabled = true;
+              const saveVal = {
+                fieldLabel: label,
+                value: val,
+                category: 'custom',
+                timestamp: Date.now()
+              };
+              const res = await window.electron.gemSaveFieldValue(saveVal);
+              if (res.success) {
+                showToast('Saved mapping value!', 'success');
+              } else {
+                showToast('Failed to save', 'error');
+              }
+              btnEl.disabled = false;
+            }
+          });
+        });
+      };
+
+      // 4. REVIEW STEP PANEL
+      const renderReviewStep = (session) => {
+        els.mainPanel.innerHTML = `
+          <div class="panel-title">👁 Invoice Review</div>
+          <div class="panel-body">
+            <div class="invoice-info-card">
+              <div class="card-label" style="color: var(--accent-purple)">Fulfillment Preview</div>
+              <div class="info-grid">
+                <span class="info-label">Invoice No:</span><span class="info-val">${session.selectedInvoiceNumber}</span>
+                <span class="info-label">Contract Number:</span><span class="info-val">${session.selectedOrderNumber}</span>
+                <span class="info-label">Calculated Amount:</span><span class="info-val">₹${session.extractedData?.amount || '—'}</span>
+              </div>
+            </div>
+
+            <p style="font-size: 0.8125rem; line-height: 1.4; color: var(--text-secondary)">
+              Please review all field entries on the GeM portal screen. Click the action button below to trigger the invoice generation command in the browser.
+            </p>
+
+            <button class="btn secondary" id="btnClickGenerate" style="margin-top: 10px;">📋 Auto Click 'Generate Invoice'</button>
+
+            <div style="flex: 1;"></div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn success" id="btnFinishSession" style="flex: 1.5;">Mark Upload Completed</button>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('btnClickGenerate').addEventListener('click', async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          btn.textContent = '⏳ Triggering Click...';
+          await addSessionLog('Sending click generate invoice action...');
+          
+          const result = await window.electron.gemClickGenerateInvoice();
+          if (result.success) {
+            await addSessionLog('✓ Generate invoice click action triggered successfully.');
+            showToast('Invoice generated!', 'success');
+          } else {
+            await addSessionError(result.error || 'Generate button not clicked');
+            showToast('Click action failed', 'error');
+          }
+          btn.disabled = false;
+          btn.textContent = "📋 Auto Click 'Generate Invoice'";
+        });
+
+        document.getElementById('btnFinishSession').addEventListener('click', async () => {
+          await addSessionLog('Session marked as completed successfully by user');
+          await updateSharedSession({ status: 'completed' });
+        });
+      };
+
+      // 5. COMPLETION STEP PANEL
+      const renderCompletedStep = (session, isSuccess) => {
+        els.mainPanel.innerHTML = `
+          <div class="panel-title">${isSuccess ? '🎉 Session Succeeded' : '❌ Session Failed'}</div>
+          <div class="panel-body" style="align-items: center; justify-content: center; text-align: center; gap: 14px;">
+            <div style="font-size: 3rem;">${isSuccess ? '🏆' : '⚠️'}</div>
+            <h4 style="font-size: 0.95rem; font-weight: 700;">
+              ${isSuccess ? 'Upload Session Finalized!' : 'Session Terminated with Errors'}
+            </h4>
+            <p style="font-size: 0.8125rem; color: var(--text-secondary); max-width: 280px; line-height: 1.4;">
+              ${isSuccess 
+                ? `Invoice <strong>${session.selectedInvoiceNumber}</strong> has been successfully matched against contract <strong>${session.selectedOrderNumber}</strong> and uploaded to the portal.`
+                : 'The upload session was cancelled or terminated. Please check your system logs drawer for errors.'}
+            </p>
+            <div style="flex: 1;"></div>
+            <button class="btn primary" id="btnResetHelper">Close Session &amp; Restart</button>
+          </div>
+        `;
+
+        document.getElementById('btnResetHelper').addEventListener('click', async () => {
+          // Sync reset
+          await window.electron.setStoreValue('activeGeMSession', null);
+          activeSession = null;
+          localFieldValues = {};
+          renderNoSession();
+        });
+      };
+
+      // Core sync loops
+      const syncStatus = async () => {
+        try {
+          if (!window.electron || !window.electron.getStoreValue) return;
+          const session = await window.electron.getStoreValue('activeGeMSession');
+          activeSession = session;
+          
+          if (!session) {
+            renderNoSession();
+            return;
+          }
+
+          // Header status
+          els.currentStatus.textContent = session.status.toUpperCase();
+          els.stepBadge.textContent = `Step ${getStepIndex(session.status) + 1}/6`;
+          
+          // Conn badge
+          if (browserState.isOpen) {
+            els.connBadge.textContent = '● Live';
+            els.connBadge.className = 'badge status active';
+          } else {
+            els.connBadge.textContent = '● Idle';
+            els.connBadge.className = 'badge status';
+          }
+
+          // Active Panel
+          renderActiveStep(session);
+          
+          // Logs
+          renderLogs(session.logs);
+        } catch (e) {
+          console.error('Sync failure:', e);
+        }
+      };
+
+      const syncBrowserState = async () => {
+        try {
+          if (!window.electron || !window.electron.gemGetBrowserState) return;
+          const state = await window.electron.gemGetBrowserState();
+          browserState = state;
+          els.currentUrl.textContent = state.currentUrl ? state.currentUrl.split('#')[0].split('?')[0] : 'Not connected';
+        } catch (e) {
+          // Dev mock
+        }
+      };
+
+      // Listeners
+      els.closeBtn.addEventListener('click', () => {
+        window.close();
+      });
+
+      els.clearLogs.addEventListener('click', async () => {
+        if (activeSession) {
+          await updateSharedSession({ logs: [] });
+          showToast('Logs cleared');
+        }
+      });
+
+      // Init
+      window.addEventListener('DOMContentLoaded', async () => {
+        await syncBrowserState();
+        await syncStatus();
+        
+        // Dynamic interval polling loops
+        setInterval(syncBrowserState, 3000);
+        setInterval(syncStatus, 1500);
+      });
+    </script>
+  </body>
+</html>

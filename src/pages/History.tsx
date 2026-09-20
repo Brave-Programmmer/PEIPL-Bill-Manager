@@ -212,7 +212,10 @@ export const History: React.FC = () => {
                             <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
-                                  setCurrentInvoice(item.content);
+                                  setCurrentInvoice({
+                                    ...item.content,
+                                    filePath: item.path // Ensure path is passed to editor
+                                  });
                                   navigate("/editor");
                                 }}
                                 className="p-2 bg-primary-500 text-white rounded-xl shadow-lg shadow-primary-500/20 hover:scale-110 transition-transform"

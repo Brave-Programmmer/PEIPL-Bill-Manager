@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Invoice, InvoiceItem, CompanyDetails, CustomerPreset } from '../utils/types';
+import { normalizeInvoiceOrderNumber } from '../utils/types';
 import { parseNumeric } from '../utils/formatters';
 
 interface InvoiceState {
@@ -103,12 +104,13 @@ export const useInvoiceStore = create<InvoiceState>()(
       })),
 
       saveInvoice: (invoice) => set((state) => {
-        const index = state.history.findIndex(h => h.billNumber === invoice.billNumber);
+        const normalizedInvoice = normalizeInvoiceOrderNumber(invoice);
+        const index = state.history.findIndex(h => h.billNumber === normalizedInvoice.billNumber);
         const newHistory = [...state.history];
         if (index > -1) {
-          newHistory[index] = invoice;
+          newHistory[index] = normalizedInvoice;
         } else {
-          newHistory.unshift(invoice);
+          newHistory.unshift(normalizedInvoice);
         }
         return { history: newHistory };
       }),
@@ -176,16 +178,30 @@ export const useInvoiceStore = create<InvoiceState>()(
         const grandTotal = totalTaxableValue + totalCGST + totalSGST + totalIGST;
         
         return {
-          totalTaxableValue: Number(totalTaxableValue.toFixed(2)),
-          totalCGST: Number(totalCGST.toFixed(2)),
-          totalSGST: Number(totalSGST.toFixed(2)),
-          totalIGST: Number(totalIGST.toFixed(2)),
-          grandTotal: Math.round(grandTotal)
+          totalTaxableValue,
+          totalCGST,
+          totalSGST,
+          totalIGST,
+          grandTotal,
         };
       }
     }),
     {
       name: 'peipl-invoice-storage',
+      version: 1,
+      storage: typeof window !== 'undefined' && window.localStorage ? {
+        getItem: (key) => {
+          const item = localStorage.getItem(key);
+          return item ? JSON.parse(item) : null;
+        },
+        setItem: (key, value) => {
+          localStorage.setItem(key, JSON.stringify(value));
+        },
+        removeItem: (key) => {
+          localStorage.removeItem(key);
+        },
+      } : undefined,
+      migrate: (persistedState, version) => persistedState as InvoiceState,
     }
   )
 );

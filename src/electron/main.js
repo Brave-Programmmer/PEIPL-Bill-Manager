@@ -1,13 +1,22 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import isDev from 'electron-is-dev';
 import Store from 'electron-store';
 import fs from 'fs';
+import { PDFDocument } from 'pdf-lib';
+import { registerGeM_IpcHandlers } from './gemIpcHandlers.js';
 
+// Fix for __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Register protocol before app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
+
+// Initialize store correctly for ESM
 const store = new Store();
 
 let mainWindow;
@@ -28,9 +37,9 @@ function createSplashScreen() {
     }
   });
 
-  const splashUrl = isDev
-    ? `file://${path.join(__dirname, 'splash.html')}`
-    : `file://${path.join(__dirname, '../dist/splash.html')}`;
+  const splashPath = path.join(__dirname, 'splash.html');
+  const displayName = String(store.get('displayName') || 'Aarathi').trim() || 'Aarathi';
+  const splashUrl = `file://${splashPath}?displayName=${encodeURIComponent(displayName)}`;
   
   splash.loadURL(splashUrl);
 }
@@ -46,8 +55,12 @@ if (!gotTheLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       
-      // Handle file open from second instance command line (last argument)
-      const filePath = commandLine.find(arg => arg.endsWith('.json') || arg.endsWith('.peibill') || arg.endsWith('.peiinvoice') || arg.endsWith('.peiplbill'));
+      const filePath = commandLine.find(arg => 
+        arg.endsWith('.json') || 
+        arg.endsWith('.peibill') || 
+        arg.endsWith('.peiinvoice') || 
+        arg.endsWith('.peiplbill')
+      );
       if (filePath) {
         openFile(filePath);
       }
@@ -55,17 +68,34 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
+    // Register custom protocol for loading local files securely
+    protocol.handle('app', (request) => {
+      let url = request.url.replace('app://', '');
+      // Handle the case where the URL might have a hash or query parameters
+      url = url.split('#')[0].split('?')[0];
+      // Normalize path for Windows/Unix
+      const filePath = path.join(__dirname, '../../dist', url === '' || url === './' ? 'index.html' : url);
+      return session.defaultSession.fetch(`file://${filePath}`);
+    });
+
+    // Register GeM IPC handlers, provide a getter for the main window
+    registerGeM_IpcHandlers(() => mainWindow);
+
     createSplashScreen();
     setTimeout(() => {
       createWindow();
-    }, 2000); // Show splash for 2 seconds
+    }, 2000);
 
     app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 
-    // Check for file passed in command line (for first instance)
-    const filePath = process.argv.find(arg => arg.endsWith('.json') || arg.endsWith('.peibill') || arg.endsWith('.peiinvoice') || arg.endsWith('.peiplbill'));
+    const filePath = process.argv.find(arg => 
+      arg.endsWith('.json') || 
+      arg.endsWith('.peibill') || 
+      arg.endsWith('.peiinvoice') || 
+      arg.endsWith('.peiplbill')
+    );
     if (filePath) {
       openFile(filePath);
     }
@@ -76,24 +106,28 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    show: false, // Don't show the window until it's ready
+    show: false,
     icon: path.join(__dirname, '../../src/assets/logo.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       devTools: true,
+      webSecurity: true,
     },
     frame: false,
     transparent: false,
     backgroundColor: '#ffffff',
   });
 
-  const url = isDev
-    ? 'http://localhost:5173'
-    : `file://${path.join(__dirname, '../dist/index.html')}`;
-
-  mainWindow.loadURL(url);
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+  } else {
+    // In production, load using the custom app:// protocol
+    mainWindow.loadURL('app://./index.html').catch(err => {
+      console.error('Failed to load UI');
+    });
+  }
 
   mainWindow.once('ready-to-show', () => {
     if (splash) {
@@ -102,12 +136,12 @@ function createWindow() {
     mainWindow.show();
   });
 
-  if (isDev) {
+  // Don't open DevTools in production for better performance
+  if (isDev && process.env.OPEN_DEVTOOLS !== 'false') {
     mainWindow.webContents.openDevTools();
   }
 }
 
-// Handle file open from OS
 const openFile = (filePath) => {
   if (filePath && fs.existsSync(filePath)) {
     try {
@@ -115,7 +149,6 @@ const openFile = (filePath) => {
       const data = JSON.parse(content);
       
       if (mainWindow) {
-        // Wait for page to finish loading before sending data
         if (mainWindow.webContents.isLoading()) {
           mainWindow.webContents.once('did-finish-load', () => {
             mainWindow.webContents.send('open-file', {
@@ -131,15 +164,10 @@ const openFile = (filePath) => {
         }
       }
     } catch (err) {
-      console.error('Error opening file:', err);
+      // Silently fail for invalid files
     }
   }
 };
-
-app.on('open-file', (event, filePath) => {
-  event.preventDefault();
-  openFile(filePath);
-});
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
@@ -150,60 +178,32 @@ ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
   });
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  return result.filePaths[0];
+  return (result.canceled || result.filePaths.length === 0) ? null : result.filePaths[0];
 });
 
-// Helper to extract Financial Year (FY) from path or filename
 const extractFyFromPath = (filePath) => {
   const normalizedPath = filePath.toUpperCase().replace(/\\/g, '/');
   const pathParts = normalizedPath.split('/');
-  
-  // 1. Check for specific month-year folders (priority to the most specific/deepest part of the path)
-  // We iterate backwards through path parts to find the most specific one
   for (let i = pathParts.length - 1; i >= 0; i--) {
     const part = pathParts[i];
-    
-    // Special case: APRIL YYYY in this workflow refers to the previous FY's final bills
     const aprilMatch = part.match(/APRIL\s+(20)?(\d{2})/);
     if (aprilMatch) {
       const yearShort = parseInt(aprilMatch[2]);
-      const prevYearShort = (yearShort - 1).toString().padStart(2, '0');
-      const currYearShort = yearShort.toString().padStart(2, '0');
-      const fy = `${prevYearShort}${currYearShort}`;
-      console.log(`FY Extraction: Found APRIL special case in "${part}" -> ${fy}`);
-      return fy;
+      return `${(yearShort - 1).toString().padStart(2, '0')}${yearShort.toString().padStart(2, '0')}`;
     }
-
-    // Check for other months (standard mapping)
-    // Jan-Mar YYYY -> (YYYY-1)-YY
     const earlyMonthsMatch = part.match(/(JANUARY|FEBRUARY|MARCH|JAN|FEB|MAR)\s+(20)?(\d{2})/);
     if (earlyMonthsMatch) {
       const yearShort = parseInt(earlyMonthsMatch[3]);
-      const prevYearShort = (yearShort - 1).toString().padStart(2, '0');
-      const currYearShort = yearShort.toString().padStart(2, '0');
-      return `${prevYearShort}${currYearShort}`;
+      return `${(yearShort - 1).toString().padStart(2, '0')}${yearShort.toString().padStart(2, '0')}`;
     }
-
-    // May-Dec YYYY -> YY-(YY+1)
     const lateMonthsMatch = part.match(/(MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(20)?(\d{2})/);
     if (lateMonthsMatch) {
       const yearShort = parseInt(lateMonthsMatch[3]);
-      const nextYearShort = (yearShort + 1).toString().padStart(2, '0');
-      const currYearShort = yearShort.toString().padStart(2, '0');
-      return `${currYearShort}${nextYearShort}`;
+      return `${yearShort.toString().padStart(2, '0')}${(yearShort + 1).toString().padStart(2, '0')}`;
     }
-
-    // 2. Standard FY format: 2025-26 or 25-26
     const fyMatch = part.match(/(\d{2})?(\d{2})-(\d{2})/);
-    if (fyMatch) {
-      const fy = `${fyMatch[2]}${fyMatch[3]}`;
-      return fy;
-    }
+    if (fyMatch) return `${fyMatch[2]}${fyMatch[3]}`;
   }
-
   return 'Unknown';
 };
 
@@ -216,31 +216,15 @@ const scanDirectoryRecursive = (dirPath, fileList = []) => {
       scanDirectoryRecursive(filePath, fileList);
     } else if (file.endsWith('.json') || file.endsWith('.peibill') || file.endsWith('.peiinvoice')) {
       try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const data = JSON.parse(content);
-        // Basic validation to ensure it's an invoice
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         if (data.billNumber && data.customerName) {
-          // 1. Extract FY from path
-          let fy = extractFyFromPath(filePath);
-
-          // 2. Extract FY from bill number (e.g. PEIPLCH2526/22 -> 2526)
-          const billNoFyMatch = data.billNumber.match(/(\d{4})/);
-          if (billNoFyMatch) {
-            fy = billNoFyMatch[1];
-          }
-
-          fileList.push({
-            path: filePath,
-            folder: path.dirname(filePath),
-            fileName: file,
-            content: data,
-            mtime: stat.mtime,
-            fy
-          });
+          // Keep invoice and GeM PDF scans on the same folder-derived FY key.
+          // A bill number's first four digits are the invoice year, not the
+          // financial-year key used by extractFyFromPath.
+          const fy = extractFyFromPath(filePath);
+          fileList.push({ path: filePath, folder: path.dirname(filePath), fileName: file, content: data, mtime: stat.mtime, fy });
         }
-      } catch (err) {
-        // Skip invalid JSON files
-      }
+      } catch (err) {}
     }
   });
   return fileList;
@@ -248,18 +232,9 @@ const scanDirectoryRecursive = (dirPath, fileList = []) => {
 
 ipcMain.handle('scan-invoices', async (event, paths) => {
   const allInvoices = [];
-  const validPaths = Array.isArray(paths) ? paths : [];
-  
-  validPaths.forEach(dirPath => {
-    if (fs.existsSync(dirPath)) {
-      try {
-        scanDirectoryRecursive(dirPath, allInvoices);
-      } catch (err) {
-        console.error(`Error scanning path ${dirPath}:`, err);
-      }
-    }
+  (Array.isArray(paths) ? paths : []).forEach(dirPath => {
+    if (fs.existsSync(dirPath)) scanDirectoryRecursive(dirPath, allInvoices);
   });
-  
   return allInvoices;
 });
 
@@ -272,25 +247,10 @@ const scanGemPdfsRecursive = (dirPath, gemList = []) => {
       scanGemPdfsRecursive(filePath, gemList);
     } else if (file.toLowerCase().endsWith('.pdf')) {
       const fileName = file.toUpperCase();
-      
-      // IGNORE files with "SUPPORT" in their name
       if (fileName.includes('SUPPORT')) return;
-
-      // Extract numeric part (e.g. "06.pdf" -> "06")
       const match = fileName.match(/(\d+)/);
       if (match) {
-        const billNumber = match[1];
-        
-        // Extract FY from path using the new robust helper
-        const fy = extractFyFromPath(filePath);
-
-        gemList.push({
-          path: filePath,
-          fileName: file,
-          billNumber,
-          fy,
-          mtime: stat.mtime
-        });
+        gemList.push({ path: filePath, fileName: file, billNumber: match[1], fy: extractFyFromPath(filePath), mtime: stat.mtime });
       }
     }
   });
@@ -299,158 +259,152 @@ const scanGemPdfsRecursive = (dirPath, gemList = []) => {
 
 ipcMain.handle('scan-gem-pdfs', async (event, paths) => {
   const allGemPdfs = [];
-  const validPaths = Array.isArray(paths) ? paths : [];
-  
-  validPaths.forEach(dirPath => {
-    if (fs.existsSync(dirPath)) {
-      try {
-        scanGemPdfsRecursive(dirPath, allGemPdfs);
-      } catch (err) {
-        console.error(`Error scanning GeM path ${dirPath}:`, err);
-      }
-    }
+  (Array.isArray(paths) ? paths : []).forEach(dirPath => {
+    if (fs.existsSync(dirPath)) scanGemPdfsRecursive(dirPath, allGemPdfs);
   });
-  
   return allGemPdfs;
 });
 
 ipcMain.handle('window-minimize', (event) => {
-  console.log('Main process: window-minimize');
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) win.minimize();
 });
 
 ipcMain.handle('window-maximize', (event) => {
-  console.log('Main process: window-maximize');
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
-  if (win.isMaximized()) {
-    win.unmaximize();
-  } else {
-    win.maximize();
-  }
+  win.isMaximized() ? win.unmaximize() : win.maximize();
 });
 
 ipcMain.handle('window-close', (event) => {
-  console.log('Main process: window-close');
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) win.close();
 });
 
-ipcMain.handle('get-store-value', (event, key) => {
-  return store.get(key);
-});
-
-ipcMain.handle('set-store-value', (event, key, value) => {
-  store.set(key, value);
-});
+ipcMain.handle('get-store-value', (event, key) => store.get(key));
+ipcMain.handle('set-store-value', (event, key, value) => store.set(key, value));
 
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [{ name: 'JSON Invoice', extensions: ['json'] }, { name: 'PEI Bill Files', extensions: ['peibill', 'peiinvoice', 'peiplbill'] }],
   });
-  
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  
-  const content = fs.readFileSync(result.filePaths[0], 'utf8');
-  return {
-    path: result.filePaths[0],
-    content: JSON.parse(content)
-  };
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return { path: result.filePaths[0], content: JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8')) };
 });
 
 ipcMain.handle('save-file', async (event, { content, filePath }) => {
   let targetPath = filePath;
-  
-  if (!targetPath) {
-    const result = await dialog.showSaveDialog({
-      filters: [{ name: 'JSON Invoice', extensions: ['json'] }, { name: 'PEI Bill File', extensions: ['peibill', 'peiinvoice'] }],
-      defaultPath: `Invoice_${content.billNumber || 'New'}.json`
-    });
-    
-    if (result.canceled || !result.filePath) {
-      return null;
+  try {
+    if (!targetPath) {
+      const result = await dialog.showSaveDialog({
+        filters: [{ name: 'JSON Invoice', extensions: ['json'] }, { name: 'PEI Bill File', extensions: ['peibill', 'peiinvoice'] }],
+        defaultPath: `Invoice_${content.billNumber || 'New'}.json`
+      });
+      if (result.canceled || !result.filePath) return null;
+      targetPath = result.filePath;
     }
-    targetPath = result.filePath;
+    
+    if (!content || typeof content !== 'object') {
+      throw new Error('Invalid invoice content: must be a valid object');
+    }
+    if (!content.billNumber) {
+      throw new Error('Invalid invoice: billNumber is required');
+    }
+    
+    const normalizedPath = path.normalize(targetPath);
+    if (normalizedPath.includes('..')) {
+      throw new Error('Invalid file path: path traversal not allowed');
+    }
+    
+    if (fs.existsSync(normalizedPath)) {
+      const backupPath = `${normalizedPath}.bak`;
+      fs.copyFileSync(normalizedPath, backupPath);
+    }
+    
+    fs.writeFileSync(normalizedPath, JSON.stringify(content, null, 2));
+    return normalizedPath;
+  } catch (err) {
+    console.error('Save file error:', err.message);
+    throw new Error(`Failed to save file: ${err.message}`);
   }
-  
-  fs.writeFileSync(targetPath, JSON.stringify(content, null, 2));
-  return targetPath;
 });
 
-// Global variable to hold print data temporarily
+const printDataBufferMap = new Map();
 let printDataBuffer = null;
+const PRINT_TIMEOUT = 10000;
 
 ipcMain.handle('print-to-pdf', async (event, data) => {
   const parentWin = BrowserWindow.fromWebContents(event.sender);
-  printDataBuffer = data;
-  
+  const sessionId = `print-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  printDataBufferMap.set(sessionId, data);
   const printWin = new BrowserWindow({
     show: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    }
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, webSecurity: true }
   });
-
-  const url = isDev
-    ? `http://localhost:5173/#/print-export`
-    : `file://${path.join(__dirname, '../dist/index.html')}#/print-export`;
-
-  printWin.loadURL(url);
+  isDev ? printWin.loadURL('http://localhost:5173/#/print-export') : printWin.loadURL('app://./index.html#/print-export');
 
   return new Promise((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        printWin.close();
+        printDataBufferMap.delete(sessionId);
+        reject(new Error('PDF generation timeout'));
+      }
+    }, PRINT_TIMEOUT);
+
     printWin.webContents.once('did-finish-load', async () => {
       try {
-        // Deterministic readiness check: Fonts and Images
         await printWin.webContents.executeJavaScript(`
           new Promise(async (resolve) => {
             await document.fonts.ready;
-            const images = Array.from(document.images);
-            await Promise.all(images.map(img => {
-              if (img.complete) return Promise.resolve();
-              return new Promise(r => {
-                img.onload = r;
-                img.onerror = r;
-              });
-            }));
-            // Extra tick for React layout stabilization
+            await Promise.all(Array.from(document.images).map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; })));
             setTimeout(resolve, 500);
           });
         `);
-
         const result = await dialog.showSaveDialog(parentWin, {
           title: 'Save Invoice as PDF',
           defaultPath: `Invoice_${data.invoice.billNumber.replace(/[\\/]/g, '_')}.pdf`,
           filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
         });
-
-        if (result.canceled || !result.filePath) {
-          printWin.close();
-          printDataBuffer = null;
-          resolve(null);
-          return;
+        if (result.canceled || !result.filePath) { 
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            printWin.close(); 
+            printDataBufferMap.delete(sessionId); 
+            resolve(null); 
+          }
+          return; 
         }
-
-        const pdfData = await printWin.webContents.printToPDF({
-          margins: { top: 0, bottom: 0, left: 0, right: 0 },
-          pageSize: 'A4',
-          printBackground: true,
-          displayHeaderFooter: false
-        });
-
+        const pdfData = await printWin.webContents.printToPDF({ margins: { top: 0, bottom: 0, left: 0, right: 0 }, pageSize: 'A4', printBackground: true, displayHeaderFooter: false });
         fs.writeFileSync(result.filePath, pdfData);
-        printWin.close();
-        printDataBuffer = null;
-        resolve(result.filePath);
-      } catch (err) {
-        printWin.close();
-        printDataBuffer = null;
-        reject(err);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          printWin.close(); 
+          printDataBufferMap.delete(sessionId); 
+          resolve(result.filePath);
+        }
+      } catch (err) { 
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          printWin.close(); 
+          printDataBufferMap.delete(sessionId); 
+          reject(err); 
+        }
+      }
+    });
+
+    printWin.webContents.once('crashed', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        printDataBufferMap.delete(sessionId);
+        reject(new Error('PDF generation window crashed'));
       }
     });
   });
@@ -458,58 +412,76 @@ ipcMain.handle('print-to-pdf', async (event, data) => {
 
 ipcMain.handle('print-window', async (event, data) => {
   printDataBuffer = data;
-  
   const printWin = new BrowserWindow({
     show: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    }
+    autoHideMenuBar: true,
+    width: 1100,
+    height: 900,
+    backgroundColor: '#ffffff',
+    resizable: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, webSecurity: true }
   });
-
-  const url = isDev
-    ? `http://localhost:5173/#/print-export`
-    : `file://${path.join(__dirname, '../dist/index.html')}#/print-export`;
-
-  printWin.loadURL(url);
+  printWin.setMenuBarVisibility(false);
+  isDev ? printWin.loadURL('http://localhost:5173/#/print-export') : printWin.loadURL('app://./index.html#/print-export');
 
   return new Promise((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        printWin.close();
+        printDataBuffer = null;
+        resolve(true);
+      }
+    }, 10000); // 10 second timeout
+
+    printWin.once('ready-to-show', () => {
+      printWin.show();
+    });
+
     printWin.webContents.once('did-finish-load', async () => {
       try {
         await printWin.webContents.executeJavaScript(`
           new Promise(async (resolve) => {
             await document.fonts.ready;
-            const images = Array.from(document.images);
-            await Promise.all(images.map(img => {
-              if (img.complete) return Promise.resolve();
-              return new Promise(r => {
-                img.onload = r;
-                img.onerror = r;
-              });
-            }));
+            await Promise.all(Array.from(document.images).map(img => img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; })));
             setTimeout(resolve, 500);
           });
         `);
-
-        printWin.webContents.print({
-          silent: false,
-          printBackground: true,
-          deviceName: ''
-        }, () => {
-          printWin.close();
-          printDataBuffer = null;
-          resolve(true);
+        printWin.focus();
+        printWin.webContents.print({ silent: false, printBackground: true, deviceName: '' }, (success, failureReason) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            printWin.close();
+            printDataBuffer = null;
+            if (success) {
+              resolve(true);
+            } else {
+              reject(new Error(failureReason || 'Print failed'));
+            }
+          }
         });
       } catch (err) {
-        printWin.close();
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          printWin.close();
+          printDataBuffer = null;
+          reject(err);
+        }
+      }
+    });
+
+    printWin.webContents.once('crashed', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
         printDataBuffer = null;
-        reject(err);
+        reject(new Error('Print window crashed'));
       }
     });
   });
 });
 
-ipcMain.on('get-print-data', (event) => {
-  event.returnValue = printDataBuffer;
-});
+ipcMain.on('get-print-data', (event) => { event.returnValue = printDataBuffer; });

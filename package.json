@@ -1,7 +1,7 @@
 {
   "name": "peipl-bill",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "src/electron/main.js",
   "type": "module",
   "scripts": {
@@ -19,9 +19,21 @@
       "output": "dist-electron"
     },
     "files": [
-      "dist/**/*",
       "src/electron/**/*",
+      "dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/assets",
+        "to": "assets",
+        "filter": [
+          "**/*.png",
+          "**/*.jpg",
+          "**/*.jpeg",
+          "**/*.ico"
+        ]
+      }
     ],
     "fileAssociations": [
       {
@@ -38,19 +50,7 @@
     "win": {
       "target": "nsis",
       "icon": "src/assets/logo.png"
-    },
-    "extraResources": [
-      {
-        "from": "src/assets",
-        "to": "assets",
-        "filter": [
-          "**/*.png",
-          "**/*.jpg",
-          "**/*.jpeg",
-          "**/*.ico"
-        ]
-      }
-    ]
+    }
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.25",
@@ -61,6 +61,8 @@
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.16.0",
     "pdf-lib": "^1.17.1",
+    "playwright": "^1.63.0",
+    "puppeteer": "^25.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-hook-form": "^7.76.0",

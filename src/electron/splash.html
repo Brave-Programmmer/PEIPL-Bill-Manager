@@ -1,148 +1,191 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: transparent;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-        .splash-container {
-            width: 100vw;
-            height: 100vh;
-            background: #ffffff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            border-radius: 32px;
-            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(0, 0, 0, 0.05);
-            color: #1e293b;
-            position: relative;
-        }
-        .logo-wrapper {
-            position: relative;
-            margin-bottom: 32px;
-        }
-        .logo {
-            width: 140px;
-            height: 140px;
-            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-            border-radius: 35px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 20px 25px -5px rgba(2, 132, 199, 0.3);
-            animation: logo-entrance 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 2;
-        }
-        .logo-text {
-            color: white;
-            font-size: 64px;
-            font-weight: 900;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .logo-ring {
-            position: absolute;
-            top: -10px;
-            left: -10px;
-            right: -10px;
-            bottom: -10px;
-            border: 2px solid #e2e8f0;
-            border-radius: 42px;
-            animation: ring-pulse 3s infinite ease-in-out;
-            z-index: 1;
-        }
-        .content {
-            text-align: center;
-            animation: fade-up 1s ease-out 0.5s both;
-        }
-        h1 {
-            font-size: 28px;
-            font-weight: 900;
-            margin: 0;
-            letter-spacing: -0.025em;
-            color: #0f172a;
-        }
-        .tagline {
-            font-size: 14px;
-            color: #0284c7;
-            margin-top: 6px;
-            font-weight: 800;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
-        .footer {
-            position: absolute;
-            bottom: 40px;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .loader-container {
-            width: 240px;
-            height: 6px;
-            background: #f1f5f9;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-bottom: 12px;
-        }
-        .loader-bar {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(to right, #0ea5e9, #6366f1);
-            animation: loading 2.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-            transform-origin: left;
-        }
-        .loading-text {
-            font-size: 10px;
-            font-weight: 700;
-            color: #94a3b8;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        @keyframes logo-entrance {
-            0% { transform: scale(0) rotate(-45deg); opacity: 0; }
-            100% { transform: scale(1) rotate(0); opacity: 1; }
-        }
-        @keyframes ring-pulse {
-            0% { transform: scale(1); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 0.2; }
-            100% { transform: scale(1); opacity: 0.5; }
-        }
-        @keyframes fade-up {
-            0% { transform: translateY(20px); opacity: 0; }
-            100% { transform: translateY(0); opacity: 1; }
-        }
-        @keyframes loading {
-            0% { transform: scaleX(0); }
-            50% { transform: scaleX(0.6); }
-            100% { transform: scaleX(1); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Segoe UI', Inter, sans-serif;
+    }
+    .splash {
+      position: relative;
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      overflow: hidden;
+      padding: 38px 46px 30px;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      border-radius: 18px;
+      color: #f8fafc;
+      background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.16), transparent 42%),
+        #0f172a;
+      box-shadow: 0 26px 60px -22px rgba(15, 23, 42, 0.72);
+    }
+    .splash::before {
+      position: absolute;
+      inset: 0;
+      content: '';
+      background:
+        linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(to bottom, black, transparent 86%);
+      pointer-events: none;
+    }
+    .splash::after {
+      position: absolute;
+      top: 0;
+      right: 44px;
+      width: 1px;
+      height: 112px;
+      content: '';
+      background: linear-gradient(to bottom, #60a5fa, transparent);
+      opacity: 0.7;
+    }
+    .topline,
+    .content,
+    .footer {
+      position: relative;
+      z-index: 1;
+    }
+    .topline {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      animation: fade-in 0.7s ease-out both;
+    }
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid rgba(147, 197, 253, 0.55);
+      border-radius: 10px;
+      color: #dbeafe;
+      background: linear-gradient(145deg, #2563eb, #1d4ed8);
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.32);
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .content {
+      max-width: 390px;
+      margin-top: auto;
+      margin-bottom: auto;
+      padding: 34px 0 26px;
+      animation: fade-up 0.8s ease-out 0.15s both;
+    }
+    h1 {
+      margin: 0;
+      color: #f8fafc;
+      font-size: 29px;
+      font-weight: 750;
+      letter-spacing: -0.035em;
+    }
+    .tagline {
+      margin-top: 9px;
+      color: #60a5fa;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .welcome {
+      margin-top: 30px;
+      color: #cbd5e1;
+      font-size: 14px;
+    }
+    .welcome strong { color: #f8fafc; }
+    .companion {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 12px;
+      color: #fbbf24;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+    .companion-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #fbbf24;
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.8);
+    }
+    .footer {
+      display: flex;
+      width: 100%;
+      flex-direction: column;
+      gap: 11px;
+    }
+    .loader {
+      width: 100%;
+      height: 4px;
+      overflow: hidden;
+      border-radius: 2px;
+      background: rgba(148, 163, 184, 0.16);
+    }
+    .loader-bar {
+      width: 100%;
+      height: 100%;
+      transform-origin: left;
+      background: linear-gradient(to right, #2563eb, #60a5fa, #fbbf24);
+      animation: loading 2.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    }
+    .loading-text {
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fade-up { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes loading { 0% { transform: scaleX(0); } 50% { transform: scaleX(0.6); } 100% { transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }
+    @media (max-width: 480px) {
+      .splash { padding: 30px 30px 24px; }
+      .splash::after { right: 28px; }
+      h1 { font-size: 25px; }
+    }
+  </style>
+  <script>
+    const displayName = new URLSearchParams(window.location.search).get('displayName') || 'Aarathi';
+    document.addEventListener('DOMContentLoaded', () => {
+      const welcomeName = document.querySelector('[data-display-name]');
+      if (welcomeName) welcomeName.textContent = displayName;
+    });
+  </script>
 </head>
 <body>
-    <div class="splash-container">
-        <div class="logo-wrapper">
-            <div class="logo">
-                <span class="logo-text">P</span>
-            </div>
-            <div class="logo-ring"></div>
-        </div>
-        <div class="content">
-            <h1>PEIPL BILLING SYSTEM</h1>
-            <div class="tagline">Pujari Engineers India (P) Ltd.</div>
-        </div>
-        <div class="footer">
-            <div class="loader-container">
-                <div class="loader-bar"></div>
-            </div>
-            <div class="loading-text">Initializing Industrial Modules...</div>
-        </div>
+  <main class="splash" aria-label="PEIPL BILL loading">
+    <div class="topline"><div class="brand-mark" aria-hidden="true">P</div><span>PEIPL Operations</span></div>
+    <div class="content">
+      <h1>PEIPL BILL</h1>
+      <div class="tagline">Invoice management workspace</div>
+      <div class="welcome">Welcome back, <strong data-display-name>Aarathi</strong>.</div>
+      <div class="companion"><span class="companion-dot"></span> Mitra is getting your desk ready</div>
     </div>
+    <div class="footer">
+      <div class="loader"><div class="loader-bar"></div></div>
+      <div class="loading-text">Mitra is arranging your workspace...</div>
+    </div>
+  </main>
 </body>
 </html>

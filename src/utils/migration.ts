@@ -19,17 +19,17 @@ export const migrateOldInvoice = (oldData: any): Invoice => {
     for (let i = 0; i < maxLen; i++) {
       const q = parseNumeric(qtyArr[i]);
       const r = parseNumeric(rateArr[i]);
-      amounts.push(Number((q * r).toFixed(2)));
+      amounts.push(q * r);
     }
 
     const cgstRate = Number(item.cgstRate) || 9;
     const sgstRate = Number(item.sgstRate) || 9;
     const igstRate = Number(item.igstRate) || 0;
 
-    const cgstAmounts = amounts.map(a => Number(((a * cgstRate) / 100).toFixed(2)));
-    const sgstAmounts = amounts.map(a => Number(((a * sgstRate) / 100).toFixed(2)));
-    const igstAmounts = amounts.map(a => Number(((a * igstRate) / 100).toFixed(2)));
-    const totalsGST = amounts.map((a, i) => Number((a + (cgstAmounts[i] || 0) + (sgstAmounts[i] || 0) + (igstAmounts[i] || 0)).toFixed(2)));
+    const cgstAmounts = amounts.map(a => (a * cgstRate) / 100);
+    const sgstAmounts = amounts.map(a => (a * sgstRate) / 100);
+    const igstAmounts = amounts.map(a => (a * igstRate) / 100);
+    const totalsGST = amounts.map((a, i) => a + (cgstAmounts[i] || 0) + (sgstAmounts[i] || 0) + (igstAmounts[i] || 0));
 
     return {
       id: item.id || Math.random().toString(36).slice(2, 11),
@@ -73,20 +73,21 @@ export const migrateOldInvoice = (oldData: any): Invoice => {
     customerAddress: oldData.customerAddress || '',
     customerGST: oldData.customerGST || '',
     vendorCode: oldData.vendorCode || '102237',
-    orderNumber: oldData.orderNumber || oldData.orderNo || '',
+    orderNumber: oldData.orderNumber || oldData.orderNo || 'GEMC-511687712601789',
     orderDate: oldData.orderDate || '',
     outlineAgreement: oldData.outlineAgreement || '4600002141',
     gemSellerId: oldData.gemSellerId || 'RXON210002099996',
     jobsheetNo: oldData.jobsheetNo || oldData.jobsheetNumber || 'ATTACHED',
     items,
     taxMode: (totalIGST > 0) ? 'IGST' : 'GST',
-    totalTaxableValue: Number(totalTaxableValue.toFixed(2)),
-    totalCGST: Number(totalCGST.toFixed(2)),
-    totalSGST: Number(totalSGST.toFixed(2)),
-    totalIGST: Number(totalIGST.toFixed(2)),
-    grandTotal: Math.round(grandTotal),
+    totalTaxableValue,
+    totalCGST,
+    totalSGST,
+    totalIGST,
+    grandTotal,
     amountInWords: oldData.amountInWords || '',
     status: oldData.status || 'saved',
     gemUploaded: oldData.gemUploaded || false,
+    filePath: oldData.filePath,
   };
 };

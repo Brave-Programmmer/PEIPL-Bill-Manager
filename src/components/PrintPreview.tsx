@@ -4,7 +4,14 @@ import { X, Printer, FileDown, ShieldCheck, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 
 import { IndustrialInvoice } from '../templates/IndustrialInvoice';
+import { MitraLoadingOverlay } from './MitraLoadingOverlay';
 import type { Invoice, CompanyDetails } from '../utils/types';
+import {
+  DEFAULT_ITEMS_PER_PAGE,
+  MAX_ITEMS_PER_PAGE,
+  MIN_ITEMS_PER_PAGE,
+  normalizeItemsPerPage,
+} from '../utils/pagination';
 
 interface Props {
   isOpen: boolean;
@@ -16,28 +23,39 @@ interface Props {
 
 export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, company, onUpdateInvoice }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingTask, setLoadingTask] = useState<'print' | 'pdf' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentItemsPerPage = normalizeItemsPerPage(invoice.itemsPerPage ?? DEFAULT_ITEMS_PER_PAGE);
 
   const handlePrint = async () => {
     try {
       setIsLoading(true);
+      setLoadingTask('print');
       setError(null);
       if (window.electron?.printWindow) {
         await window.electron.printWindow({ invoice, company });
       } else {
-        window.print();
+        const printPayload = { invoice, company, createdAt: Date.now() };
+        localStorage.setItem('PEIPL_PRINT_DATA', JSON.stringify(printPayload));
+        window.open(
+          `${window.location.origin}${window.location.pathname}#/print-export?autoPrint=1`,
+          '_blank',
+          'width=1200,height=900,noopener,noreferrer'
+        );
       }
     } catch (err) {
       console.error('Print failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to print invoice');
     } finally {
       setIsLoading(false);
+      setLoadingTask(null);
     }
   };
 
   const handleSavePDF = async () => {
     try {
       setIsLoading(true);
+      setLoadingTask('pdf');
       setError(null);
       if (window.electron?.printToPDF) {
         await window.electron.printToPDF({ invoice, company });
@@ -49,6 +67,7 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
       setError(err instanceof Error ? err.message : 'Failed to save PDF');
     } finally {
       setIsLoading(false);
+      setLoadingTask(null);
     }
   };
 
@@ -60,6 +79,13 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
     });
   };
 
+  const updateItemsPerPage = (nextValue: number) => {
+    if (!onUpdateInvoice) return;
+    onUpdateInvoice({
+      itemsPerPage: normalizeItemsPerPage(nextValue),
+    });
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -68,8 +94,13 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+          className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
         >
+          <MitraLoadingOverlay
+            visible={isLoading}
+            message={loadingTask === 'pdf' ? 'Mitra is creating your PDF...' : 'Mitra is preparing your print...'}
+            detail={loadingTask === 'pdf' ? 'I am packaging the invoice into a clean, shareable document.' : 'I am handing the finished invoice to the printer.'}
+          />
           {/* Modal Container */}
           <motion.div
             initial={{ scale: 0.96, opacity: 0 }}
@@ -90,6 +121,23 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+                  <label htmlFor="invoice-items-per-page" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                    Page size
+                  </label>
+                  <input
+                    id="invoice-items-per-page"
+                    type="number"
+                    min={MIN_ITEMS_PER_PAGE}
+                    max={MAX_ITEMS_PER_PAGE}
+                    step={1}
+                    value={currentItemsPerPage}
+                    onChange={(event) => updateItemsPerPage(Number(event.target.value))}
+                    disabled={isLoading}
+                    className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm font-bold text-slate-700 outline-none transition-all focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+
                 <button
                   type="button"
                   onClick={toggleStamp}

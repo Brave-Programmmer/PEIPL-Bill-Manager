@@ -75,6 +75,7 @@ export interface Invoice {
   customerAddress: string;
   customerGST: string;
   items: InvoiceItem[];
+  itemsPerPage?: number;
   
   // Advanced fields
   companyDetails?: CompanyDetails;
@@ -94,4 +95,14 @@ export interface Invoice {
   status: 'draft' | 'saved' | 'paid';
   gemUploaded?: boolean;
   showStamp?: boolean;
+  filePath?: string;
+}
+
+const DEFAULT_ORDER_NUMBER = 'GEMC-511687712601789';
+
+export function normalizeInvoiceOrderNumber(invoice: Invoice): Invoice {
+  return {
+    ...invoice,
+    orderNumber: invoice.orderNumber || DEFAULT_ORDER_NUMBER
+  };
 }
