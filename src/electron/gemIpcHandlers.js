@@ -6,7 +6,7 @@ import { ipcMain, BrowserView, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { getGeM_PlaywrightService } from './gemPlaywright.js';
+import { getGeM_BrowserService } from './gemBrowser.js';
 import Store from 'electron-store';
 import { PDFDocument } from 'pdf-lib';
 
@@ -22,7 +22,7 @@ const gemStore = new Store({
 });
 
 export function registerGeM_IpcHandlers(getMainWindow) {
-  const playwrightService = getGeM_PlaywrightService();
+  const browserService = getGeM_BrowserService();
 
   ipcMain.handle('select-pdf', async () => {
     const result = await dialog.showOpenDialog({
@@ -92,43 +92,61 @@ export function registerGeM_IpcHandlers(getMainWindow) {
     }
   };
 
-  ipcMain.handle('gem:open-browser', async (event) => {
+  ipcMain.handle('gem:open-browser', async (event, options) => {
     try {
-      // The Playwright page is the page used by every later workflow step.
+      // The service page is the page used by every later workflow step.
       // Opening only a BrowserView leaves that page uninitialized.
-      return await playwrightService.openGeM();
+      // options: { mode?: 'auto'|'managed'|'attach', cdp?: string }
+      return await browserService.openGeM(options || {});
     } catch (err) {
       return { success: false, error: String(err) };
     }
   });
 
   ipcMain.handle('gem:check-chrome-debugging', async () => {
-    // Check if Chrome is running with remote debugging
+    // agent-browser --auto-connect discovers Chrome via the DevToolsActivePort
+    // file (Chrome 144+ remote debugging) or by probing common CDP ports.
+    const probePort = async (port) => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+        return response.ok;
+      } catch {
+        return false;
+      }
+    };
+
+    for (const port of [9222, 9229]) {
+      if (await probePort(port)) {
+        return { success: true, chromeRunning: true, debuggingPort: port };
+      }
+    }
+
+    // Chrome 136+ can enable remote debugging without a fixed port; the
+    // DevToolsActivePort file in the profile directory signals that mode.
+    const localAppData = process.env.LOCALAPPDATA || '';
+    const devToolsPortFile = path.join(
+      localAppData,
+      'Google', 'Chrome', 'User Data', 'DevToolsActivePort',
+    );
     try {
-      const response = await fetch('http://127.0.0.1:9222/json/version');
-      if (response.ok) {
-        return { success: true, chromeRunning: true };
+      if (fs.existsSync(devToolsPortFile) && fs.statSync(devToolsPortFile).size > 0) {
+        return { success: true, chromeRunning: true, debuggingPort: 'auto' };
       }
     } catch {}
-    try {
-      const response = await fetch('http://localhost:9222/json/version');
-      if (response.ok) {
-        return { success: true, chromeRunning: true };
-      }
-    } catch {}
+
     return { success: true, chromeRunning: false };
   });
 
   ipcMain.handle('gem:wait-for-login', async (event, timeoutMs = 300000) => {
-    return await playwrightService.waitForLogin(timeoutMs);
+    return await browserService.waitForLogin(timeoutMs);
   });
 
   ipcMain.handle('gem:navigate-to-orders', async (event) => {
-    return await playwrightService.navigateToOrders();
+    return await browserService.navigateToOrders();
   });
 
   ipcMain.handle('gem:extract-all-orders', async (event) => {
-    const result = await playwrightService.extractAllOrders();
+    const result = await browserService.extractAllOrders();
     if (result.success && result.orders) {
       // Remove element handle before sending to renderer to avoid serialization error
       const sanitizedOrders = result.orders.map(({ element, ...rest }) => rest);
@@ -138,7 +156,7 @@ export function registerGeM_IpcHandlers(getMainWindow) {
   });
 
   ipcMain.handle('gem:find-matching-order', async (event, invoiceOrderNumber) => {
-    const result = await playwrightService.findMatchingOrder(invoiceOrderNumber);
+    const result = await browserService.findMatchingOrder(invoiceOrderNumber);
     if (result.success && result.order) {
       // Remove element handle before sending to renderer to avoid serialization error
       const { element, ...sanitizedOrder } = result.order;
@@ -152,43 +170,73 @@ export function registerGeM_IpcHandlers(getMainWindow) {
       return { success: false, error: 'Invalid order data or missing contract number' };
     }
     // Reconstruct order object (element reference is lost in IPC, so we'll find it again in main process)
-    const result = await playwrightService.findMatchingOrder(orderData.contractNumber);
+    const result = await browserService.findMatchingOrder(orderData.contractNumber);
     if (!result.success || !result.order) {
       return { success: false, error: result.error || 'Could not find order to process' };
     }
-    return await playwrightService.processOrder(result.order);
+    return await browserService.processOrder(result.order);
   });
 
   ipcMain.handle('gem:verify-order-page', async (event, expectedOrderNumber) => {
-    return await playwrightService.verifyOrderPage(expectedOrderNumber);
+    return await browserService.verifyOrderPage(expectedOrderNumber);
   });
 
   ipcMain.handle('gem:click-generate-invoice', async (event) => {
-    return await playwrightService.clickGenerateInvoice();
+    return await browserService.clickGenerateInvoice();
   });
 
   ipcMain.handle('gem:detect-invoice-fields', async (event) => {
-    return await playwrightService.detectInvoiceFields();
+    return await browserService.detectInvoiceFields();
   });
 
   ipcMain.handle('gem:fill-field', async (event, selector, value) => {
-    return await playwrightService.fillField(selector, value);
+    return await browserService.fillField(selector, value);
+  });
+
+  ipcMain.handle('gem:attach-pdf', async (event, filePath) => {
+    if (!filePath) {
+      return { success: false, error: 'Missing PDF file path' };
+    }
+    return await browserService.attachPdf(filePath);
+  });
+
+  ipcMain.handle('gem:submit-invoice', async () => {
+    return await browserService.submitInvoice();
   });
 
   ipcMain.handle('gem:get-current-url', async (event) => {
-    return await playwrightService.getCurrentUrl();
+    return await browserService.getCurrentUrl();
   });
 
   ipcMain.handle('gem:get-page-title', async (event) => {
-    return await playwrightService.getPageTitle();
+    return await browserService.getPageTitle();
+  });
+
+  /**
+   * Browser navigation controls
+   */
+  ipcMain.handle('gem:navigate', async (event, url) => {
+    return await browserService.navigate(url);
+  });
+
+  ipcMain.handle('gem:go-back', async (event) => {
+    return await browserService.goBack();
+  });
+
+  ipcMain.handle('gem:go-forward', async (event) => {
+    return await browserService.goForward();
+  });
+
+  ipcMain.handle('gem:reload', async (event) => {
+    return await browserService.reload();
   });
 
   ipcMain.handle('gem:take-screenshot', async (event, name) => {
-    return await playwrightService.takeScreenshot(name);
+    return await browserService.takeScreenshot(name);
   });
 
   ipcMain.handle('gem:get-screenshot', async (event) => {
-    return await playwrightService.takeScreenshot();
+    return await browserService.takeScreenshot();
   });
 
   ipcMain.handle('gem:close-browser', async (event) => {
@@ -196,13 +244,13 @@ export function registerGeM_IpcHandlers(getMainWindow) {
       const win = getMainWindow ? getMainWindow() : null;
       closeGeMBrowserView(win);
     } catch (e) {}
-    // Also close any Playwright-managed browser if present
-    await playwrightService.close();
+    // Also close any automation-managed browser if present
+    await browserService.close();
     return { success: true };
   });
 
   ipcMain.handle('gem:get-browser-state', async (event) => {
-    return playwrightService.getBrowserState();
+    return browserService.getBrowserState();
   });
 
   ipcMain.handle('gem:save-field-value', (event, value) => {

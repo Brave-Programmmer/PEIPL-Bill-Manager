@@ -156,6 +156,18 @@ npm run lint
 3. Toggle GeM upload status manually if needed
 4. Track pending uploads in the dashboard
 
+### GeM Automated Invoice Upload
+
+Use **GeM Upload** in the app sidebar for a guided browser workflow:
+
+1. Select an invoice (fields are extracted automatically)
+2. Open Chrome / attach to a debuggable session and complete GeM SSO (or skip if already logged in)
+3. Order search auto-starts, matches the GEMC number, processes the order, and opens the invoice form
+4. Detect & map fields, push values to GeM, then review
+5. Optionally attach the invoice PDF and **Confirm & Upload** to submit on the live GeM page
+
+Successful uploads mark the invoice as GeM-uploaded in local history.
+
 ### Print & PDF Export
 
 - Click **Preview & Print** in the invoice editor

@@ -1,10 +1,13 @@
 /**
  * GeM Upload - Step 3 & 4: Order Matching Component
+ *
+ * Process flow: process order → verify page → generate invoice
+ * (verify-before-process was wrong — browser is still on the orders list).
  */
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, AlertCircle, CheckCircle2, Search } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Search, RefreshCw } from 'lucide-react';
 import type { GeM_OrderCard, GeM_ExtractedInvoiceData } from '../utils/gemTypes';
 import { useGeM_Store } from '../store/useGeM_Store';
 import { useDisplayName } from '../utils/userProfile';
@@ -12,24 +15,25 @@ import { useDisplayName } from '../utils/userProfile';
 interface GeM_OrderMatchingProps {
   extractedData: GeM_ExtractedInvoiceData;
   onOrderMatched: (order: GeM_OrderCard) => void;
-  onNext: () => void;
+  onNext?: () => void;
   disabled?: boolean;
 }
 
 export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
   extractedData,
   onOrderMatched,
-  onNext,
   disabled = false,
 }) => {
   const displayName = useDisplayName();
-  const [status, setStatus] = React.useState<'idle' | 'navigating' | 'loading' | 'matching' | 'matched' | 'error'>(
+  const [status, setStatus] = React.useState<'idle' | 'navigating' | 'loading' | 'matching' | 'matched' | 'processing' | 'error'>(
     'idle'
   );
   const [orders, setOrders] = React.useState<GeM_OrderCard[]>([]);
   const [matchedOrder, setMatchedOrder] = React.useState<GeM_OrderCard | null>(null);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const autoStartedRef = React.useRef(false);
+
   const filteredOrders = React.useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return orders;
@@ -45,59 +49,7 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
   const setSelectedOrder = useGeM_Store((state) => state.setSelectedOrder);
   const updateStatus = useGeM_Store((state) => state.updateSessionStatus);
 
-  const handleNavigateToOrders = async () => {
-    setStatus('navigating');
-    setErrorMessage('');
-    addLog('Navigating to GeM orders page...');
-
-    try {
-      const result = await window.electron.gemNavigateToOrders();
-
-      if (result.success) {
-        addLog('Successfully navigated to orders page');
-        setStatus('loading');
-        handleExtractOrders();
-      } else {
-        const error = result.error || 'Failed to navigate to orders';
-        setErrorMessage(error);
-        setStatus('error');
-        addError(error);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      setErrorMessage(errorMsg);
-      setStatus('error');
-      addError(errorMsg);
-    }
-  };
-
-  const handleExtractOrders = async () => {
-    setStatus('loading');
-    addLog('Extracting orders from page...');
-
-    try {
-      const result = await window.electron.gemExtractAllOrders();
-
-      if (result.success && result.orders) {
-        addLog(`Found ${result.orders.length} orders`);
-        setOrders(result.orders);
-        setStatus('matching');
-        handleFindMatchingOrder();
-      } else {
-        const error = result.error || 'Failed to extract orders';
-        setErrorMessage(error);
-        setStatus('error');
-        addError(error);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      setErrorMessage(errorMsg);
-      setStatus('error');
-      addError(errorMsg);
-    }
-  };
-
-  const handleFindMatchingOrder = async () => {
+  const handleFindMatchingOrder = React.useCallback(async () => {
     addLog(`Searching for order: ${extractedData.orderNumber}`);
     setStatus('matching');
 
@@ -122,7 +74,74 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
       setStatus('error');
       addError(errorMsg);
     }
-  };
+  }, [addError, addLog, extractedData.orderNumber, setSelectedOrder, updateStatus]);
+
+  const handleExtractOrders = React.useCallback(async () => {
+    setStatus('loading');
+    addLog('Extracting orders from page...');
+
+    try {
+      const result = await window.electron.gemExtractAllOrders();
+
+      if (result.success && result.orders) {
+        if (result.orders.length === 0) {
+          const error =
+            'No order panels found on the GeM page. The page layout may have changed — try Refresh, or open Orders manually in the browser.';
+          setErrorMessage(error);
+          setStatus('error');
+          addError(error);
+          return;
+        }
+
+        addLog(`Found ${result.orders.length} orders`);
+        setOrders(result.orders);
+        setStatus('matching');
+        await handleFindMatchingOrder();
+      } else {
+        const error = result.error || 'Failed to extract orders';
+        setErrorMessage(error);
+        setStatus('error');
+        addError(error);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMessage(errorMsg);
+      setStatus('error');
+      addError(errorMsg);
+    }
+  }, [addError, addLog, handleFindMatchingOrder]);
+
+  const handleNavigateToOrders = React.useCallback(async () => {
+    setStatus('navigating');
+    setErrorMessage('');
+    addLog('Navigating to GeM orders page...');
+
+    try {
+      const result = await window.electron.gemNavigateToOrders();
+
+      if (result.success) {
+        addLog('Successfully navigated to orders page');
+        await handleExtractOrders();
+      } else {
+        const error = result.error || 'Failed to navigate to orders';
+        setErrorMessage(error);
+        setStatus('error');
+        addError(error);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMessage(errorMsg);
+      setStatus('error');
+      addError(errorMsg);
+    }
+  }, [addError, addLog, handleExtractOrders]);
+
+  // Auto-start order search once when this step mounts
+  React.useEffect(() => {
+    if (autoStartedRef.current || disabled) return;
+    autoStartedRef.current = true;
+    void handleNavigateToOrders();
+  }, [disabled, handleNavigateToOrders]);
 
   const handleManualOrderSelect = (order: GeM_OrderCard) => {
     addLog(`Manually selected order: ${order.contractNumber}`);
@@ -136,13 +155,26 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
   const handleVerifyAndProcess = async () => {
     if (!matchedOrder) return;
 
-    addLog(`Verifying order page...`);
-    setStatus('loading');
+    setStatus('processing');
+    setErrorMessage('');
 
     try {
-      // Verify order page
-      const verifyResult = await window.electron.gemVerifyOrderPage(matchedOrder.contractNumber);
+      // 1) Process first (opens the order) — browser is still on the list before this
+      addLog('Processing order...');
+      const processResult = await window.electron.gemProcessOrder(matchedOrder);
 
+      if (!processResult.success) {
+        const error = processResult.error || 'Failed to process order';
+        setErrorMessage(error);
+        setStatus('error');
+        addError(error);
+        return;
+      }
+      addLog('✓ Order processed successfully');
+
+      // 2) Verify we're on the right order detail page
+      addLog('Verifying order page...');
+      const verifyResult = await window.electron.gemVerifyOrderPage(matchedOrder.contractNumber);
       if (!verifyResult.success) {
         const error = verifyResult.error || 'Order verification failed';
         setErrorMessage(error);
@@ -150,32 +182,19 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
         addError(error);
         return;
       }
-
       addLog('Order verification successful');
 
-      // Process order
-      addLog('Processing order...');
-      const processResult = await window.electron.gemProcessOrder(matchedOrder);
-
-      if (processResult.success) {
-        addLog('✓ Order processed successfully');
-        const invoiceResult = await window.electron.gemClickGenerateInvoice();
-        if (!invoiceResult.success) {
-          const error = invoiceResult.error || 'Failed to open invoice form';
-          setErrorMessage(error);
-          setStatus('error');
-          addError(error);
-          return;
-        }
-        addLog('✓ Invoice form opened');
-        onOrderMatched(matchedOrder);
-        onNext();
-      } else {
-        const error = processResult.error || 'Failed to process order';
+      // 3) Open invoice form
+      const invoiceResult = await window.electron.gemClickGenerateInvoice();
+      if (!invoiceResult.success) {
+        const error = invoiceResult.error || 'Failed to open invoice form';
         setErrorMessage(error);
         setStatus('error');
         addError(error);
+        return;
       }
+      addLog('✓ Invoice form opened');
+      onOrderMatched(matchedOrder);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       setErrorMessage(errorMsg);
@@ -189,6 +208,9 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
     setErrorMessage('');
     setOrders([]);
     setMatchedOrder(null);
+    autoStartedRef.current = false;
+    void handleNavigateToOrders();
+    autoStartedRef.current = true;
   };
 
   return (
@@ -197,21 +219,19 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6"
     >
-      {/* Step Title */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
         <h3 className="text-lg font-semibold mb-2 text-slate-900 dark:text-white">
           Step 3: Find & Match Order
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          We'll search for the matching order ({extractedData.orderNumber}) and open it for invoice upload.
+          Searching for order {extractedData.orderNumber}, then opening the invoice form.
         </p>
       </div>
 
-      {/* Status Indicator */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
         <div className="flex items-center gap-3 mb-4">
           {status === 'idle' && <Search className="w-5 h-5 text-slate-400" />}
-          {(status === 'navigating' || status === 'loading' || status === 'matching') && (
+          {(status === 'navigating' || status === 'loading' || status === 'matching' || status === 'processing') && (
             <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
           )}
           {status === 'matched' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
@@ -223,11 +243,11 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
             {status === 'loading' && `${displayName}, loading orders...`}
             {status === 'matching' && `${displayName}, searching for a matching order...`}
             {status === 'matched' && 'Order found and ready!'}
+            {status === 'processing' && `${displayName}, opening invoice form...`}
             {status === 'error' && 'Error finding order'}
           </span>
         </div>
 
-        {/* Current Order Info */}
         {matchedOrder && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -255,7 +275,6 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
           </motion.div>
         )}
 
-        {/* Orders List */}
         {orders.length > 0 && !matchedOrder && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -293,7 +312,6 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
           </motion.div>
         )}
 
-        {/* Error Message */}
         {status === 'error' && errorMessage && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -306,7 +324,6 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
         )}
       </div>
 
-      {/* Action Buttons */}
       <div className="flex gap-3 justify-end">
         {status === 'idle' && (
           <button
@@ -321,21 +338,22 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
         {status === 'matched' && (
           <button
             onClick={handleVerifyAndProcess}
-            className="px-6 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer"
+            disabled={disabled}
+            className="px-6 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors cursor-pointer"
           >
-            Process Order
+            Process Order & Open Invoice
           </button>
         )}
 
         {status === 'error' && (
-          <>
-            <button
-              onClick={handleRetry}
-              className="px-6 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-            >
-              Try Again
-            </button>
-          </>
+          <button
+            onClick={handleRetry}
+            disabled={disabled}
+            className="px-6 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try Again
+          </button>
         )}
       </div>
     </motion.div>

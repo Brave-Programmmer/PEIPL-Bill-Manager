@@ -25,7 +25,7 @@ interface GeM_Store {
   browserState: GeM_BrowserAutomationState;
 
   // Session Actions
-  initializeSession: (invoiceNumber: string) => void;
+  initializeSession: (invoiceNumber: string, extractedData?: GeM_ExtractedInvoiceData | null) => void;
   updateSessionStatus: (status: GeM_UploadSession['status']) => void;
   setSelectedOrder: (order: GeM_OrderCard) => void;
   setExtractedData: (data: GeM_ExtractedInvoiceData) => void;
@@ -55,13 +55,16 @@ interface GeM_Store {
   resetCurrentSession: () => void;
 }
 
-const createDefaultSession = (invoiceNumber: string): GeM_UploadSession => ({
+const createDefaultSession = (
+  invoiceNumber: string,
+  extractedData: GeM_ExtractedInvoiceData | null = null,
+): GeM_UploadSession => ({
   sessionId: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
   startTime: Date.now(),
   status: 'login',
   selectedInvoiceNumber: invoiceNumber,
-  selectedOrderNumber: '',
-  extractedData: null,
+  selectedOrderNumber: extractedData?.orderNumber || '',
+  extractedData,
   matchedOrder: null,
   fieldMappings: [],
   userDefinedValues: {},
@@ -109,8 +112,8 @@ export const useGeM_Store = create<GeM_Store>()(
       },
 
       // Session Actions
-      initializeSession: (invoiceNumber: string) => {
-        const newSession = createDefaultSession(invoiceNumber);
+      initializeSession: (invoiceNumber: string, extractedData: GeM_ExtractedInvoiceData | null = null) => {
+        const newSession = createDefaultSession(invoiceNumber, extractedData);
         set({ currentSession: newSession });
         syncSessionToElectronStore(newSession).catch(err => console.error('Session init sync failed:', err));
       },

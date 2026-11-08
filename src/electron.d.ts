@@ -23,8 +23,8 @@ export interface IElectronAPI {
   onFileOpen: (callback: (data: any) => void) => () => void;
   
   // GeM Automation APIs
-  gemOpenBrowser: () => Promise<{ success: boolean; method?: string; error?: string }>;
-  gemCheckChromeDebugging: () => Promise<{ success: boolean; chromeRunning: boolean }>;
+  gemOpenBrowser: (options?: { mode?: 'auto' | 'managed' | 'attach'; cdp?: string }) => Promise<{ success: boolean; method?: string; reused?: boolean; error?: string }>;
+  gemCheckChromeDebugging: () => Promise<{ success: boolean; chromeRunning: boolean; debuggingPort?: number | string }>;
   gemWaitForLogin: (timeoutMs?: number) => Promise<{ success: boolean; error?: string }>;
   gemNavigateToOrders: () => Promise<{ success: boolean; error?: string }>;
   gemExtractAllOrders: () => Promise<{ success: boolean; orders?: any[]; error?: string }>;
@@ -34,8 +34,14 @@ export interface IElectronAPI {
   gemClickGenerateInvoice: () => Promise<{ success: boolean; error?: string }>;
   gemDetectInvoiceFields: () => Promise<{ success: boolean; fields?: any[]; error?: string }>;
   gemFillField: (selector: string, value: string) => Promise<{ success: boolean; error?: string }>;
+  gemAttachPdf: (filePath: string) => Promise<{ success: boolean; selector?: string; error?: string }>;
+  gemSubmitInvoice: () => Promise<{ success: boolean; signal?: string; message?: string; error?: string }>;
   gemGetCurrentUrl: () => Promise<string>;
   gemGetPageTitle: () => Promise<string>;
+  gemNavigate: (url: string) => Promise<{ success: boolean; error?: string }>;
+  gemGoBack: () => Promise<{ success: boolean; error?: string }>;
+  gemGoForward: () => Promise<{ success: boolean; error?: string }>;
+  gemReload: () => Promise<{ success: boolean; error?: string }>;
   gemTakeScreenshot: (name: string) => Promise<{ success: boolean; error?: string }>;
   gemGetScreenshot: () => Promise<{ success: boolean; base64?: string; error?: string }>;
   gemCloseBrowser: () => Promise<{ success: boolean; error?: string }>;

@@ -28,6 +28,7 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
   const [logs, setLogs] = React.useState<string[]>([]);
   const [chromeRunning, setChromeRunning] = React.useState<boolean | null>(null);
   const [isCheckingChrome, setIsCheckingChrome] = React.useState(false);
+  const abortedWaitRef = React.useRef(false);
 
   const addLog = useGeM_Store((state) => state.addSessionLog);
   const addError = useGeM_Store((state) => state.addSessionError);
@@ -98,10 +99,13 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
   };
 
   const handleWaitForLogin = async () => {
+    abortedWaitRef.current = false;
     addLogEntry('Waiting for you to complete login...');
 
     try {
       const result = await window.electron.gemWaitForLogin(300000); // 5 minute timeout
+
+      if (abortedWaitRef.current) return;
 
       if (result.success) {
         addLogEntry('Login successful!');
@@ -121,6 +125,7 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
         onError?.(error);
       }
     } catch (error) {
+      if (abortedWaitRef.current) return;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       setErrorMessage(errorMsg);
       setLoginStatus('error');
@@ -130,7 +135,35 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
     }
   };
 
+  const finishAsLoggedIn = (message: string) => {
+    abortedWaitRef.current = true;
+    addLogEntry(message);
+    setLoginStatus('success');
+    setIsWaitingForLogin(false);
+    setLoginStatusInStore({
+      isLoggedIn: true,
+      loginTime: Date.now(),
+    });
+    onLoginSuccess();
+  };
+
+  const handleAlreadyLoggedIn = async () => {
+    try {
+      // Prefer confirming fulfilment host when a browser session is already open
+      const url = await window.electron.gemGetCurrentUrl?.();
+      const href = typeof url === 'string' ? url : '';
+      if (/fulfilment\.gem\.gov\.in/i.test(href)) {
+        finishAsLoggedIn('Already on GeM fulfilment — continuing');
+        return;
+      }
+    } catch {
+      /* fall through to manual confirm */
+    }
+    finishAsLoggedIn('User confirmed already logged in');
+  };
+
   const handleRetry = () => {
+    abortedWaitRef.current = true;
     setLoginStatus('idle');
     setErrorMessage('');
     setLogs([]);
@@ -185,8 +218,9 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
                   Active Chrome Session Detected (CDP Ready)
                 </div>
                 <p className="text-[11px] text-emerald-800 dark:text-emerald-400/90 mt-1 leading-relaxed">
-                  Chrome was detected with remote debugging on port 9222.
-                  The system will sync directly with your active Chrome browser (passwords and cookies will be available).
+                  A debuggable Chrome session was detected. The system will sync directly with your
+                  active Chrome browser (passwords and cookies will be available). Approve the
+                  remote-debugging prompt in Chrome if one appears.
                 </p>
               </div>
             </div>
@@ -200,12 +234,14 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
                   No Active Chrome Session Found (Persistent Fallback)
                 </div>
                 <p className="text-[11px] text-amber-800 dark:text-amber-400/90 mt-1 leading-relaxed">
-                  Chrome debugging port 9222 is closed. A clean standalone Chrome instance will be launched.
+                  No debuggable Chrome session found. A dedicated Chrome window with its own
+                  persistent profile will be launched instead — log in once and the session is
+                  remembered between uploads.
                 </p>
                 <div className="mt-2.5 pt-2.5 border-t border-amber-200/50 dark:border-amber-800/40 text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Option:</span> To use your active Chrome profile instead:
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Option:</span> To reuse your everyday Chrome profile instead:
                   <ul className="list-disc pl-3.5 mt-1 space-y-0.5">
-                    <li>Close all open Chrome windows</li>
+                    <li>In Chrome, open <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[9px] text-slate-800 dark:text-slate-200 select-all">chrome://inspect/#remote-debugging</code> and enable it, or</li>
                     <li>Start Chrome with: <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[9px] text-slate-800 dark:text-slate-200 select-all">--remote-debugging-port=9222</code></li>
                     <li>Click "Check Session Status" above to refresh</li>
                   </ul>
@@ -261,6 +297,7 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
             <div className="font-medium mb-1">Waiting for login...</div>
             <p className="text-xs leading-relaxed">
               Please complete the login in the Chrome browser. This waits up to 5 minutes before timeout.
+              If you are already logged in, use the button below to continue immediately.
             </p>
           </motion.div>
         )}
@@ -304,15 +341,34 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
       )}
 
       {/* Action Buttons */}
-      <div className="flex gap-3 justify-end">
+      <div className="flex gap-3 justify-end flex-wrap">
         {loginStatus === 'idle' && (
+          <>
+            <button
+              onClick={handleAlreadyLoggedIn}
+              disabled={disabled || isOpening}
+              className="px-6 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors cursor-pointer"
+            >
+              I&apos;m already logged in
+            </button>
+            <button
+              onClick={handleOpenGeM}
+              disabled={disabled || isOpening}
+              className="px-6 py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              {isOpening && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isOpening ? `${displayName}, opening GeM Login...` : 'Open GeM Login'}
+            </button>
+          </>
+        )}
+
+        {loginStatus === 'waiting' && (
           <button
-            onClick={handleOpenGeM}
-            disabled={disabled || isOpening}
-            className="px-6 py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 cursor-pointer"
+            onClick={handleAlreadyLoggedIn}
+            disabled={disabled}
+            className="px-6 py-2 rounded-lg font-medium border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer"
           >
-            {isOpening && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isOpening ? `${displayName}, opening GeM Login...` : 'Open GeM Login'}
+            I&apos;m already logged in — Continue
           </button>
         )}
 
@@ -323,6 +379,12 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
               className="px-6 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             >
               Back
+            </button>
+            <button
+              onClick={handleAlreadyLoggedIn}
+              className="px-6 py-2 rounded-lg font-medium border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer"
+            >
+              I&apos;m already logged in
             </button>
             <button
               onClick={handleOpenGeM}

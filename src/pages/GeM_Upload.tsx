@@ -80,6 +80,7 @@ export const GeM_UploadPage: React.FC = () => {
   const [completionStatus, setCompletionStatus] = React.useState<
     "success" | "failed" | null
   >(null);
+  const [completionMessage, setCompletionMessage] = React.useState<string | undefined>();
 
   // ── Store ─────────────────────────────────────────────────────────────────
   const currentSession = useGeM_Store((state) => state.currentSession);
@@ -120,6 +121,7 @@ export const GeM_UploadPage: React.FC = () => {
     setMatchedOrder(null);
     setFieldMappings([]);
     setCompletionStatus(null);
+    setCompletionMessage(undefined);
   }, [resetSession, setBrowserState]);
 
   // ── Back navigation ───────────────────────────────────────────────────────
@@ -170,7 +172,8 @@ export const GeM_UploadPage: React.FC = () => {
   const handleInvoiceSelected = React.useCallback(
     (data: GeM_ExtractedInvoiceData) => {
       setSelectedInvoiceData(data);
-      initializeSession(data.invoiceNumber);
+      // Keep extractedData inside the new session so recovery / overlay stay coherent
+      initializeSession(data.invoiceNumber, data);
       addLog(`Invoice ${data.invoiceNumber} selected — moving to login`);
       goToStep("login");
     },
@@ -200,23 +203,28 @@ export const GeM_UploadPage: React.FC = () => {
     [addLog, goToStep],
   );
 
-  const handleConfirmUpload = React.useCallback(() => {
-    setCompletionStatus("success");
-    addLog("Upload workflow completed successfully");
-    goToStep("completion");
-  }, [addLog, goToStep]);
+  const handleConfirmUpload = React.useCallback(
+    (result: { success: boolean; message?: string }) => {
+      setCompletionStatus(result.success ? "success" : "failed");
+      setCompletionMessage(result.message);
+      addLog(
+        result.success
+          ? "Upload workflow completed successfully"
+          : `Upload failed: ${result.message || "unknown error"}`,
+      );
+      goToStep("completion");
+    },
+    [addLog, goToStep],
+  );
 
   const handleCancelUpload = React.useCallback(() => {
-    // TODO: replace window.confirm with a modal component to avoid blocking.
     if (window.confirm("Are you sure you want to cancel this upload?")) {
       addLog("Upload cancelled by user");
       handleReturnToDashboard();
     }
   }, [addLog, handleReturnToDashboard]);
 
-  const completionSucceeded =
-    completionStatus === "success" ||
-    (currentStep === "completion" && completionStatus === null);
+  const completionSucceeded = completionStatus === "success";
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -355,9 +363,7 @@ export const GeM_UploadPage: React.FC = () => {
                 </motion.div>
               )}
 
-              {currentStep === "order-matching" &&
-                selectedInvoiceData &&
-                loginStatus.isLoggedIn && (
+              {currentStep === "order-matching" && selectedInvoiceData && (
                   <motion.div
                     key="order-matching"
                     custom={direction}
@@ -367,11 +373,39 @@ export const GeM_UploadPage: React.FC = () => {
                     exit="exit"
                     transition={{ duration: 0.25, ease: "easeInOut" }}
                   >
-                    <GeM_OrderMatching
-                      extractedData={selectedInvoiceData}
-                      onOrderMatched={handleOrderMatched}
-                      onNext={() => goToStep("field-mapping")}
-                    />
+                    {!loginStatus.isLoggedIn && !browserState.isOpen ? (
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-6 space-y-3">
+                        <p className="text-sm text-amber-900 dark:text-amber-100">
+                          Login session was lost. Go back to GeM Login, or continue if the browser is already open and authenticated.
+                        </p>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => goToStep("login")}
+                            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 cursor-pointer"
+                          >
+                            Back to Login
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              useGeM_Store.getState().setLoginStatus({
+                                isLoggedIn: true,
+                                loginTime: Date.now(),
+                              });
+                            }}
+                            className="px-4 py-2 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-sm cursor-pointer"
+                          >
+                            I&apos;m already logged in
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <GeM_OrderMatching
+                        extractedData={selectedInvoiceData}
+                        onOrderMatched={handleOrderMatched}
+                      />
+                    )}
                   </motion.div>
                 )}
 
@@ -432,9 +466,10 @@ export const GeM_UploadPage: React.FC = () => {
                     invoiceNumber={selectedInvoiceData.invoiceNumber}
                     orderNumber={selectedInvoiceData.orderNumber}
                     message={
-                      completionSucceeded
+                      completionMessage ||
+                      (completionSucceeded
                         ? "Invoice uploaded successfully. You can now view and manage it in your GeM dashboard."
-                        : "There was an issue completing the upload. Please try again."
+                        : "There was an issue completing the upload. Please try again.")
                     }
                     onNewUpload={resetWorkflow}
                     history={history}

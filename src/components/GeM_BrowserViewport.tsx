@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Monitor, Power, FileText } from 'lucide-react';
+import { RefreshCw, Monitor, Power, FileText, ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import { useGeM_Store } from '../store/useGeM_Store';
 
 export const GeM_BrowserViewport: React.FC = () => {
@@ -50,6 +50,22 @@ export const GeM_BrowserViewport: React.FC = () => {
     };
   }, [browserState.isOpen, fetchScreenshot]);
 
+  const [navBusy, setNavBusy] = React.useState(false);
+
+  const engineLabel = React.useMemo(() => {
+    switch (browserState.connectionMethod) {
+      case 'auto-connect':
+      case 'cdp':
+      case 'connectOverCDP':
+        return { text: 'Your Chrome', cls: 'text-emerald-400' };
+      case 'managed':
+      case 'launchPersistentContext':
+        return { text: 'Managed browser', cls: 'text-sky-400' };
+      default:
+        return { text: browserState.connectionMethod || 'Browser', cls: 'text-amber-400' };
+    }
+  }, [browserState.connectionMethod]);
+
   const handleDisconnect = async () => {
     try {
       addLog('Disconnecting browser manually...');
@@ -62,6 +78,22 @@ export const GeM_BrowserViewport: React.FC = () => {
     }
   };
 
+  const runNav = async (action: () => Promise<{ success: boolean; error?: string }>, label: string) => {
+    if (navBusy) return;
+    setNavBusy(true);
+    try {
+      const result = await action();
+      if (!result?.success) {
+        addLog(`${label} failed${result?.error ? `: ${result.error}` : ''}`);
+      }
+      // Refresh the feed shortly after navigation settles
+      setTimeout(fetchScreenshot, 1200);
+    } catch (err) {
+      console.error(`${label} error:`, err);
+    } finally {
+      setNavBusy(false);
+    }
+  };
 
   if (!browserState.isOpen) {
     return (
@@ -97,8 +129,34 @@ export const GeM_BrowserViewport: React.FC = () => {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Refresh button */}
+        <div className="flex items-center gap-1.5">
+          {/* Navigation controls */}
+          <button
+            onClick={() => runNav(() => window.electron.gemGoBack(), 'Back')}
+            disabled={navBusy}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40"
+            title="Back"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => runNav(() => window.electron.gemGoForward(), 'Forward')}
+            disabled={navBusy}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40"
+            title="Forward"
+          >
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => runNav(() => window.electron.gemReload(), 'Reload')}
+            disabled={navBusy}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40"
+            title="Reload page"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${navBusy ? 'animate-spin' : ''}`} />
+          </button>
+          <div className="w-px h-4 bg-slate-700 mx-1" />
+          {/* Refresh view button */}
           <button
             onClick={fetchScreenshot}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
@@ -143,8 +201,8 @@ export const GeM_BrowserViewport: React.FC = () => {
           </div>
           <div className="text-right shrink-0">
             <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Connection</div>
-            <div className={`font-semibold ${browserState.connectionMethod === 'connectOverCDP' ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {browserState.connectionMethod === 'connectOverCDP' ? 'Chrome profile (CDP)' : 'Clean browser'}
+            <div className={`font-semibold ${engineLabel.cls}`}>
+              {engineLabel.text}
             </div>
           </div>
         </div>

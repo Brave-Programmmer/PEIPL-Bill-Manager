@@ -33,6 +33,10 @@
           "**/*.jpeg",
           "**/*.ico"
         ]
+      },
+      {
+        "from": "node_modules/agent-browser/bin/agent-browser-win32-x64.exe",
+        "to": "agent-browser/agent-browser-win32-x64.exe"
       }
     ],
     "fileAssociations": [
@@ -54,6 +58,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.25",
+    "agent-browser": "^0.41.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.3.0",
     "electron-is-dev": "^3.0.1",

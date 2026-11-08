@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('electron', {
   printWindow: (data) => ipcRenderer.invoke('print-window', data),
 
   // GeM Automation APIs
-  gemOpenBrowser: () => ipcRenderer.invoke('gem:open-browser'),
+  gemOpenBrowser: (options) => ipcRenderer.invoke('gem:open-browser', options),
   gemCheckChromeDebugging: () => ipcRenderer.invoke('gem:check-chrome-debugging'),
   gemWaitForLogin: (timeoutMs) => ipcRenderer.invoke('gem:wait-for-login', timeoutMs),
   gemNavigateToOrders: () => ipcRenderer.invoke('gem:navigate-to-orders'),
@@ -36,8 +36,14 @@ contextBridge.exposeInMainWorld('electron', {
   gemClickGenerateInvoice: () => ipcRenderer.invoke('gem:click-generate-invoice'),
   gemDetectInvoiceFields: () => ipcRenderer.invoke('gem:detect-invoice-fields'),
   gemFillField: (selector, value) => ipcRenderer.invoke('gem:fill-field', selector, value),
+  gemAttachPdf: (filePath) => ipcRenderer.invoke('gem:attach-pdf', filePath),
+  gemSubmitInvoice: () => ipcRenderer.invoke('gem:submit-invoice'),
   gemGetCurrentUrl: () => ipcRenderer.invoke('gem:get-current-url'),
   gemGetPageTitle: () => ipcRenderer.invoke('gem:get-page-title'),
+  gemNavigate: (url) => ipcRenderer.invoke('gem:navigate', url),
+  gemGoBack: () => ipcRenderer.invoke('gem:go-back'),
+  gemGoForward: () => ipcRenderer.invoke('gem:go-forward'),
+  gemReload: () => ipcRenderer.invoke('gem:reload'),
   gemTakeScreenshot: (name) => ipcRenderer.invoke('gem:take-screenshot', name),
   gemGetScreenshot: () => ipcRenderer.invoke('gem:get-screenshot'),
   gemCloseBrowser: () => ipcRenderer.invoke('gem:close-browser'),

@@ -38,6 +38,7 @@ interface DetectedField {
   selector: string;
   type: string;
   value?: string;
+  isRequired?: boolean;
 }
 
 interface GeM_FieldMappingFormProps {
@@ -80,9 +81,14 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
     loadSavedValues();
   }, []);
 
-  // Memoised so the two conditional renders below don't recompute every tick
+  // Only required fields must be filled to continue
   const unfilled = React.useMemo(
-    () => mappings.filter((m) => !m.isFilled),
+    () => mappings.filter((m) => m.isRequired && !m.isFilled),
+    [mappings],
+  );
+
+  const pendingPush = React.useMemo(
+    () => mappings.filter((m) => m.value && !m.isFilled && m.gemFieldSelector),
     [mappings],
   );
 
@@ -134,6 +140,19 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
         let category: GeM_FieldMapping['category'] = 'required';
 
         // Smart mapping — ordered from most-specific to least-specific
+        // File inputs are handled on the Review step (PDF attach)
+        if (field.type === 'file') {
+          newMappings.push({
+            gemFieldLabel: fieldLabel,
+            gemFieldSelector: field.selector,
+            value: '',
+            category: 'required',
+            isRequired: false,
+            isFilled: true,
+          });
+          continue;
+        }
+
         if (
           nameLower.includes('place_of_supply_state_ut') ||
           labelLower.includes('place of supply(state') ||
@@ -141,14 +160,16 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
           labelLower.includes('place of supply state') ||
           selectorLower.includes('place_of_supply_state_ut')
         ) {
-          mappedValue = 'Maharashtra / 27';
+          mappedValue =
+            extractedData.placeOfSupplyStateUt ||
+            'Maharashtra / 27';
           mappedFrom = 'placeOfSupplyStateUt';
           category = 'auto-filled';
         } else if (
           nameLower.includes('place_of_supply') ||
           labelLower.includes('place of supply')
         ) {
-          mappedValue = 'Buyer Location';
+          mappedValue = extractedData.placeOfSupply || 'Buyer Location';
           mappedFrom = 'placeOfSupply';
           category = 'auto-filled';
         } else if (
@@ -204,25 +225,38 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
           }
         }
 
-        // Try to fill the field in the browser — log but don't abort on failure
+        // Only mark filled when GeM actually accepted the value
+        let filledOnPage = false;
         if (mappedValue) {
           try {
-            await window.electron.gemFillField(field.selector, mappedValue);
-            addLog(`✓ Auto-filled: ${fieldLabel}`);
+            const fillResult = await window.electron.gemFillField(field.selector, mappedValue);
+            if (fillResult?.success) {
+              filledOnPage = true;
+              addLog(`✓ Auto-filled: ${fieldLabel}`);
+            } else {
+              addLog(`⚠ Could not fill field "${fieldLabel}" on page: ${fillResult?.error || 'unknown'}`);
+            }
           } catch (fillErr) {
             addLog(`⚠ Could not fill field "${fieldLabel}" on page`);
             console.error(`Failed to fill field ${fieldLabel}:`, fillErr);
           }
         }
 
+        const attemptedFill = !!mappedValue;
+        // Required when HTML marks it, or when we mapped a value that failed to land on GeM
+        const isRequired =
+          field.isRequired === true || (attemptedFill && !filledOnPage);
+        const isFilled =
+          filledOnPage || (!attemptedFill && field.isRequired !== true);
+
         newMappings.push({
           gemFieldLabel: fieldLabel,
           gemFieldSelector: field.selector,
           mappedFrom,
           value: mappedValue,
-          category,
-          isRequired: true,
-          isFilled: !!mappedValue,
+          category: mappedValue ? category : 'required',
+          isRequired,
+          isFilled,
         });
       }
 
@@ -244,15 +278,54 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
 
   // ── User edits ────────────────────────────────────────────────────────────
 
+  const pushFieldToGeM = React.useCallback(
+    async (mapping: GeM_FieldMapping, value: string) => {
+      if (!mapping.gemFieldSelector || !value) return false;
+      try {
+        const result = await window.electron.gemFillField(mapping.gemFieldSelector, value);
+        if (result?.success) {
+          addLog(`✓ Pushed to GeM: ${mapping.gemFieldLabel}`);
+          return true;
+        }
+        addLog(`⚠ Failed to push "${mapping.gemFieldLabel}": ${result?.error || 'unknown'}`);
+        return false;
+      } catch (err) {
+        addLog(`⚠ Failed to push "${mapping.gemFieldLabel}" to GeM`);
+        console.error(err);
+        return false;
+      }
+    },
+    [addLog],
+  );
+
   const handleUpdateFieldValue = (fieldLabel: string, value: string) => {
     setMappings((prev) =>
       prev.map((m) =>
         m.gemFieldLabel === fieldLabel
-          ? { ...m, value, isFilled: !!value, category: 'user-defined' }
+          ? { ...m, value, isFilled: false, category: 'user-defined' }
           : m,
       ),
     );
     updateUserValue(fieldLabel, value);
+  };
+
+  const handlePushField = async (mapping: GeM_FieldMapping) => {
+    if (!mapping.value) return;
+    const ok = await pushFieldToGeM(mapping, mapping.value);
+    setMappings((prev) =>
+      prev.map((m) =>
+        m.gemFieldLabel === mapping.gemFieldLabel
+          ? { ...m, isFilled: ok, category: 'user-defined' }
+          : m,
+      ),
+    );
+  };
+
+  const handlePushAllUnfilled = async () => {
+    const pending = mappings.filter((m) => m.value && !m.isFilled && m.gemFieldSelector);
+    for (const mapping of pending) {
+      await handlePushField(mapping);
+    }
   };
 
   const handleSaveFieldMapping = async (fieldLabel: string, value: string) => {
@@ -388,19 +461,32 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
                   className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
 
-                {mapping.isFilled && mapping.category !== 'auto-filled' && (
-                  <button
-                    type="button"
-                    disabled={disabled || !mapping.value}
-                    onClick={() =>
-                      mapping.value && handleSaveFieldMapping(mapping.gemFieldLabel, mapping.value)
-                    }
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Save className="w-3 h-3" aria-hidden />
-                    Save for next time
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-3">
+                  {mapping.value && mapping.gemFieldSelector && !mapping.isFilled && (
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => handlePushField(mapping)}
+                      className="text-xs text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Zap className="w-3 h-3" aria-hidden />
+                      Push to GeM
+                    </button>
+                  )}
+                  {mapping.isFilled && mapping.category !== 'auto-filled' && (
+                    <button
+                      type="button"
+                      disabled={disabled || !mapping.value}
+                      onClick={() =>
+                        mapping.value && handleSaveFieldMapping(mapping.gemFieldLabel, mapping.value)
+                      }
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Save className="w-3 h-3" aria-hidden />
+                      Save for next time
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </motion.div>
@@ -476,6 +562,17 @@ export const GeM_FieldMappingForm: React.FC<GeM_FieldMappingFormProps> = ({
             >
               Re-detect
             </button>
+            {pendingPush.length > 0 && (
+              <button
+                type="button"
+                onClick={handlePushAllUnfilled}
+                disabled={disabled}
+                className="px-6 py-2 rounded-lg font-medium border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-2"
+              >
+                <Zap className="w-4 h-4" aria-hidden />
+                Push {pendingPush.length} to GeM
+              </button>
+            )}
             <button
               type="button"
               onClick={handleCompleteMapping}

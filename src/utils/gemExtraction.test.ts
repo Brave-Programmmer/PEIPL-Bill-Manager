@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractInvoiceDataForGeM, validateExtractedData } from './gemExtraction.ts';
+import {
+  extractInvoiceDataForGeM,
+  placeOfSupplyFromGst,
+  validateExtractedData,
+} from './gemExtraction.ts';
 
 const mockInvoice = {
   billNumber: 'BILL-001',
@@ -37,5 +41,12 @@ test('defaults the vendor GST to the company GSTIN when the invoice lacks one', 
   const extracted = extractInvoiceDataForGeM(mockInvoice);
 
   assert.equal(extracted.vendorDetails.gst, '27AADCP2938G1ZD');
+  assert.equal(extracted.placeOfSupplyStateUt, 'Maharashtra / 27');
   assert.equal(validateExtractedData(extracted).isValid, true);
+});
+
+test('derives place of supply from buyer GSTIN state code', () => {
+  assert.equal(placeOfSupplyFromGst('29AAACR2831H1ZK'), 'Karnataka / 29');
+  assert.equal(placeOfSupplyFromGst('07AAACR2831H1ZK'), 'Delhi / 07');
+  assert.equal(placeOfSupplyFromGst(''), 'Maharashtra / 27');
 });

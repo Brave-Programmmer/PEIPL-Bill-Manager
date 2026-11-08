@@ -302,6 +302,49 @@ export class GeM_PlaywrightService {
     return this.page?.title().catch(() => '') ?? '';
   }
 
+  // ── Navigation controls (parity with the agent-browser backend) ───────────
+
+  async goBack() {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+    try {
+      await this.page.goBack({ waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => null);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error instanceof Error ? error.message : error) };
+    }
+  }
+
+  async goForward() {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+    try {
+      await this.page.goForward({ waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => null);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error instanceof Error ? error.message : error) };
+    }
+  }
+
+  async reload() {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+    try {
+      await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => null);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error instanceof Error ? error.message : error) };
+    }
+  }
+
+  async navigate(url) {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+    if (!url || typeof url !== 'string') return { success: false, error: 'Invalid URL' };
+    try {
+      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error instanceof Error ? error.message : error) };
+    }
+  }
+
   // ── Authentication ────────────────────────────────────────────────────────
 
   /**
@@ -488,22 +531,33 @@ export class GeM_PlaywrightService {
    */
   async processOrder(matchedOrder) {
     if (!this.page) return { success: false, error: 'Browser not initialized' };
-    if (!matchedOrder?.element) {
-      return {
-        success: false,
-        error: 'No element handle on matchedOrder — ensure findMatchingOrder returned it',
-      };
-    }
 
     try {
-      let processButton = await matchedOrder.element
+      let panel = matchedOrder?.element || null;
+
+      // Re-locate by contract number when the element handle was lost over IPC
+      if (!panel && matchedOrder?.contractNumber) {
+        const found = await this.findMatchingOrder(matchedOrder.contractNumber);
+        if (found.success && found.order?.element) {
+          panel = found.order.element;
+        }
+      }
+
+      if (!panel) {
+        return {
+          success: false,
+          error: 'No element handle on matchedOrder — ensure findMatchingOrder returned it',
+        };
+      }
+
+      let processButton = await panel
         .$(
           '.process-order-btn, [data-action="process"], button:has-text("PROCESS")',
         )
         .catch(() => null);
 
       if (!processButton) {
-        const allButtons = await matchedOrder.element.$$('button').catch(() => []);
+        const allButtons = await panel.$$('button').catch(() => []);
         for (const btn of allButtons) {
           const text = await btn.textContent().catch(() => '');
           if (text?.includes('PROCESS')) {
@@ -518,10 +572,11 @@ export class GeM_PlaywrightService {
       }
 
       await processButton.click();
+      // GeM uses long-polling; networkidle often never settles.
       await this.page
-        .waitForNavigation({ waitUntil: 'networkidle', timeout: 15_000 })
+        .waitForLoadState('domcontentloaded', { timeout: 15_000 })
         .catch(() => null);
-      await this.page.waitForLoadState('networkidle');
+      await this.page.waitForTimeout(2_000).catch(() => null);
 
       return { success: true };
     } catch (error) {
@@ -536,8 +591,20 @@ export class GeM_PlaywrightService {
     if (!this.page) return { success: false, error: 'Browser not initialized' };
 
     try {
-      const content = await this.page.content();
-      if (!content.includes(expectedOrderNumber)) {
+      const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const target = norm(expectedOrderNumber);
+      if (!target) return { success: false, error: 'Missing expected order number' };
+
+      const text = await this.page.evaluate(() => document.body?.innerText || '');
+      if (text.includes(expectedOrderNumber)) return { success: true };
+
+      const matches = text.match(/GEMC[-\/][0-9A-Z\-/]+/gi) || [];
+      const hit = matches.some((c) => {
+        const cn = norm(c);
+        return cn === target || cn.includes(target) || target.includes(cn);
+      });
+
+      if (!hit) {
         return { success: false, error: 'Order number mismatch on page' };
       }
       return { success: true };
@@ -579,9 +646,9 @@ export class GeM_PlaywrightService {
 
       await btn.click();
       await this.page
-        .waitForNavigation({ waitUntil: 'networkidle', timeout: 15_000 })
+        .waitForLoadState('domcontentloaded', { timeout: 15_000 })
         .catch(() => null);
-      await this.page.waitForLoadState('networkidle');
+      await this.page.waitForTimeout(2_000).catch(() => null);
 
       return { success: true };
     } catch (error) {
@@ -596,49 +663,183 @@ export class GeM_PlaywrightService {
     if (!this.page) return { success: false, error: 'Browser not initialized' };
 
     try {
-      const inputElements = await this.page.$$('input, textarea, select');
-      const fields = [];
+      const fields = await this.page.evaluate(() => {
+        const SKIP_TYPES = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'radio', 'checkbox']);
+        const els = Array.from(document.querySelectorAll('input, textarea, select'));
+        const out = [];
 
-      for (let i = 0; i < inputElements.length; i++) {
-        try {
-          const element = inputElements[i];
-          const type = (await element.getAttribute('type').catch(() => null)) ?? 'text';
-          const name =
-            (await element.getAttribute('name').catch(() => null)) ?? `field_${i}`;
-          const id = (await element.getAttribute('id').catch(() => null)) ?? '';
-          const placeholder =
-            (await element.getAttribute('placeholder').catch(() => null)) ?? '';
+        els.forEach((el, i) => {
+          try {
+            const type = (
+              el.getAttribute('type') ||
+              (el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : 'text')
+            ).toLowerCase();
+            if (type !== 'file' && SKIP_TYPES.has(type)) return;
+            if (el.disabled || el.readOnly) return;
+            if (el.getAttribute('aria-hidden') === 'true') return;
 
-          let label = placeholder;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+            if (el.offsetParent === null && type !== 'file') return;
 
-          if (id) {
-            const labelEl = await this.page.$(`label[for="${id}"]`).catch(() => null);
-            if (labelEl) {
-              label = (await labelEl.textContent().then((t) => t?.trim())) || label;
+            const name = el.getAttribute('name') || `field_${i}`;
+            const id = el.getAttribute('id') || '';
+            const placeholder = el.getAttribute('placeholder') || '';
+            const required = el.required || el.getAttribute('aria-required') === 'true';
+
+            let label = placeholder;
+            if (id) {
+              const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+              if (lbl) label = (lbl.innerText || lbl.textContent || '').trim() || label;
             }
+            if (!label) {
+              const parentLabel = el.closest('label');
+              if (parentLabel) label = (parentLabel.innerText || parentLabel.textContent || '').trim();
+            }
+            if (!label) label = el.getAttribute('aria-label') || name;
+
+            const noise = `${label} ${name}`.toLowerCase();
+            if (/search|filter|captcha|csrf|token|_nonce|remember/.test(noise) && type !== 'file') return;
+
+            const selector = id ? `#${CSS.escape(id)}` : `[name="${name.replace(/"/g, '\\"')}"]`;
+            out.push({
+              label: label || name,
+              name,
+              selector,
+              value: type === 'file' ? '' : el.value || '',
+              type,
+              isRequired: !!required,
+            });
+          } catch {
+            /* skip */
           }
+        });
 
-          if (!label) {
-            const ariaLabel = await element.getAttribute('aria-label').catch(() => null);
-            label = ariaLabel || name;
-          }
-
-          const value = await element.inputValue().catch(() => '');
-
-          // Use a valid, specific selector — fallback to name attribute when no id
-          const selector = id ? `#${id}` : `[name="${name}"]`;
-
-          fields.push({ label: label || name, selector, value, type });
-        } catch {
-          continue;
-        }
-      }
+        return out;
+      });
 
       return { success: true, fields };
     } catch (error) {
       return {
         success: false,
         error: `Failed to detect fields: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
+  /**
+   * Attach a local PDF to a file input on the invoice form.
+   * @param {string} filePath
+   */
+  async attachPdf(filePath) {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+    if (!filePath) return { success: false, error: 'PDF file not found' };
+
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'PDF file not found' };
+      }
+
+      const fileInputs = await this.page.$$('input[type="file"]');
+      if (!fileInputs.length) {
+        return { success: false, error: 'No file upload field found on the GeM invoice form' };
+      }
+
+      let target = fileInputs[0];
+      for (const input of fileInputs) {
+        const meta = await input
+          .evaluate((el) =>
+            `${el.getAttribute('name') || ''} ${el.getAttribute('id') || ''} ${el.getAttribute('accept') || ''}`.toLowerCase(),
+          )
+          .catch(() => '');
+        if (/pdf|invoice|upload|document|file/.test(meta) || !meta.includes('accept') || meta.includes('pdf')) {
+          target = input;
+          break;
+        }
+      }
+
+      await target.setInputFiles(filePath);
+      await this.page.waitForTimeout(800).catch(() => null);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to attach PDF: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
+  /**
+   * Click GeM Submit / Save / Confirm and check for success cues.
+   */
+  async submitInvoice() {
+    if (!this.page) return { success: false, error: 'Browser not initialized' };
+
+    try {
+      const patterns = [
+        /submit\s*invoice/i,
+        /upload\s*invoice/i,
+        /save\s*&?\s*submit/i,
+        /confirm\s*upload/i,
+        /^submit$/i,
+        /^save$/i,
+        /^confirm$/i,
+      ];
+
+      const handle = await this.page.evaluateHandle((patternSources) => {
+        const regs = patternSources.map((s) => new RegExp(s.source, s.flags));
+        const candidates = Array.from(
+          document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]'),
+        );
+        return (
+          candidates.find((b) => {
+            const t = ((b.innerText || b.value || b.textContent || b.getAttribute('aria-label') || '') + '').trim();
+            return regs.some((re) => re.test(t));
+          }) || null
+        );
+      }, patterns.map((re) => ({ source: re.source, flags: re.flags })));
+
+      const element = handle.asElement();
+      if (!element) {
+        await handle.dispose().catch(() => null);
+        return { success: false, error: 'Submit / Save button not found on GeM invoice form' };
+      }
+
+      await element.click();
+      await handle.dispose().catch(() => null);
+      await this.page.waitForTimeout(2_500).catch(() => null);
+
+      const signal = await this.page.evaluate(() => {
+        const t = (document.body && (document.body.innerText || document.body.textContent) || '').toLowerCase();
+        const url = (location.href || '').toLowerCase();
+        if (/invoice\s*(has\s*been\s*)?(submitted|uploaded|saved|created|generated)\s*successfully/.test(t)) return 'success';
+        if (/successfully\s*(submitted|uploaded|saved|created)/.test(t)) return 'success';
+        if (/upload\s*successful|submission\s*successful/.test(t)) return 'success';
+        if (/error|failed|invalid|mandatory|required field/.test(t) && /please|correct|fill/.test(t)) return 'error';
+        if (url.includes('success') || url.includes('invoice')) return 'likely';
+        return 'unknown';
+      });
+
+      if (signal === 'error') {
+        return {
+          success: false,
+          error: 'GeM reported a validation or submission error. Check the form and try again.',
+          signal,
+        };
+      }
+
+      return {
+        success: true,
+        signal,
+        message:
+          signal === 'success'
+            ? 'GeM confirmed the invoice submission'
+            : 'Submit clicked — please verify success on the GeM page',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to submit invoice: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
