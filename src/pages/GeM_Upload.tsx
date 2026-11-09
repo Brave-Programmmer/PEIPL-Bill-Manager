@@ -83,7 +83,6 @@ export const GeM_UploadPage: React.FC = () => {
   const [completionMessage, setCompletionMessage] = React.useState<string | undefined>();
 
   // ── Store ─────────────────────────────────────────────────────────────────
-  const currentSession = useGeM_Store((state) => state.currentSession);
   const history = useGeM_Store((state) => state.history) ?? [];
   const loginStatus = useGeM_Store((state) => state.loginStatus);
   const browserState = useGeM_Store((state) => state.browserState);
@@ -232,98 +231,71 @@ export const GeM_UploadPage: React.FC = () => {
     <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <TitleBar />
 
-      {/* ── Sticky header ──────────────────────────────────────────────────── */}
+      {/* ── Sticky header (compact) ────────────────────────────────────────── */}
       <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-[200]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-[1700px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
+          {currentStep !== "invoice-selection" && currentStep !== "completion" && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back"
+              title="Back"
+              className="shrink-0 p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
 
-          {/* Title row */}
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between mb-4 gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-                GeM Automated Invoice Upload
-              </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                Automated workflow to upload invoices to Government e-Marketplace
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <CompanionAssistant compact />
-              <button
-                type="button"
-                onClick={handleReturnToDashboard}
-                className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleNewInvoice}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-              >
-                New Invoice
-              </button>
-            </div>
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">
+              GeM Invoice Upload
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              Step {Math.max(1, currentStepIndex + 1)} of {STEPS.length} ·{" "}
+              {STEPS[currentStepIndex]?.label}
+            </p>
           </div>
 
-          {/* Progress stepper */}
-          <nav aria-label="Upload progress" className="flex items-center gap-2">
-            {STEPS.map((step, idx) => {
-              const isActive = idx === currentStepIndex;
-              const isComplete = idx < currentStepIndex;
-              const isClickable = isComplete;
+          <div className="flex-1" />
 
-              return (
-                <React.Fragment key={step.id}>
-                  <motion.button
-                    type="button"
-                    aria-current={isActive ? "step" : undefined}
-                    aria-label={`Step ${idx + 1}: ${step.label}${isComplete ? " (completed)" : ""}`}
-                    onClick={() => isClickable && goToStep(step.id)}
-                    disabled={!isClickable && !isActive}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${
-                      isActive
-                        ? "bg-blue-600 text-white"
-                        : isComplete
-                          ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 cursor-pointer"
-                          : "bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-default"
-                    }`}
-                    whileHover={isClickable ? { scale: 1.05 } : {}}
-                    whileTap={isClickable ? { scale: 0.97 } : {}}
-                  >
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
-                        isComplete
-                          ? "bg-green-600 text-white"
-                          : isActive
-                            ? "bg-blue-700 text-white"
-                            : "bg-slate-300 dark:bg-slate-600 text-slate-500"
-                      }`}
-                    >
-                      {isComplete ? "✓" : idx + 1}
-                    </div>
-                    <span className="hidden sm:inline text-sm font-medium whitespace-nowrap">
-                      {step.label}
-                    </span>
-                  </motion.button>
-
-                  {idx < STEPS.length - 1 && (
-                    <div
-                      className={`flex-1 h-1 rounded-full transition-colors duration-500 ${
-                        isComplete ? "bg-green-500" : "bg-slate-200 dark:bg-slate-600"
-                      }`}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </nav>
+          <div className="flex items-center gap-2 shrink-0">
+            <CompanionAssistant compact />
+            <button
+              type="button"
+              onClick={handleReturnToDashboard}
+              className="px-3 py-1.5 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={handleNewInvoice}
+              className="px-3 py-1.5 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              New Invoice
+            </button>
+          </div>
         </div>
+
+        {/* Slim segmented progress bar */}
+        <nav aria-label="Upload progress" className="flex h-1">
+          {STEPS.map((step, idx) => (
+            <div
+              key={step.id}
+              aria-current={idx === currentStepIndex ? "step" : undefined}
+              title={step.label}
+              className={`flex-1 transition-colors duration-300 ${
+                idx <= currentStepIndex ? "bg-blue-500" : "bg-slate-200 dark:bg-slate-700"
+              }`}
+            />
+          ))}
+        </nav>
       </header>
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      <main className={`mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 transition-all duration-300 ${browserState.isOpen || currentStep === 'order-matching' || currentStep === 'field-mapping' ? 'max-w-[1440px]' : 'max-w-5xl'}`}>
+      <main className={`mx-auto px-4 sm:px-6 lg:px-8 py-6 transition-all duration-300 ${browserState.isOpen || currentStep === 'order-matching' || currentStep === 'field-mapping' ? 'max-w-[1700px]' : 'max-w-5xl'}`}>
         <div className={`grid grid-cols-1 ${browserState.isOpen || currentStep === 'order-matching' || currentStep === 'field-mapping' ? 'lg:grid-cols-5' : ''} gap-8 items-start`}>
-          <div className={`${browserState.isOpen || currentStep === 'order-matching' || currentStep === 'field-mapping' ? 'lg:col-span-3' : ''}`}>
+          <div className={`${browserState.isOpen || currentStep === 'order-matching' || currentStep === 'field-mapping' ? 'lg:col-span-2 min-w-0' : ''}`}>
             <AnimatePresence mode="wait" custom={direction}>
 
               {currentStep === "invoice-selection" && (
@@ -481,86 +453,12 @@ export const GeM_UploadPage: React.FC = () => {
           </div>
 
           {browserState.isOpen && (
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-3 min-w-0 space-y-6">
               <GeM_BrowserViewport />
             </div>
           )}
         </div>
       </main>
-
-      {/* ── Floating back button ────────────────────────────────────────────── */}
-      {currentStep !== "invoice-selection" && currentStep !== "completion" && (
-        <div className="fixed bottom-6 right-6 z-30">
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleBack}
-            className="flex items-center gap-2 px-4 py-3 rounded-lg bg-slate-600 dark:bg-slate-700 text-white hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors shadow-lg"
-          >
-            <ChevronLeft className="w-5 h-5" />
-            Back
-          </motion.button>
-        </div>
-      )}
-
-      {/* ── Session info sidebar ────────────────────────────────────────────── */}
-      {currentSession && (
-        <motion.aside
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          aria-label="Session info"
-          className="fixed bottom-6 left-6 max-w-xs bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-4 z-30"
-        >
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
-            Session
-          </p>
-
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex gap-2">
-              <dt className="text-slate-500 dark:text-slate-400 shrink-0">Invoice</dt>
-              <dd className="font-medium text-slate-900 dark:text-white truncate">
-                {currentSession.selectedInvoiceNumber}
-              </dd>
-            </div>
-
-            {currentSession.selectedOrderNumber && (
-              <div className="flex gap-2">
-                <dt className="text-slate-500 dark:text-slate-400 shrink-0">Order</dt>
-                <dd className="font-medium text-slate-900 dark:text-white truncate">
-                  {currentSession.selectedOrderNumber}
-                </dd>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <dt className="text-slate-500 dark:text-slate-400 shrink-0">Status</dt>
-              <dd className="font-medium text-blue-600 dark:text-blue-400 truncate">
-                {currentSession.status}
-              </dd>
-            </div>
-          </dl>
-
-          {currentSession.logs.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                Recent Logs
-              </p>
-              <ul className="space-y-1 max-h-24 overflow-y-auto">
-                {currentSession.logs.slice(-3).map((log, idx) => (
-                  <li
-                    key={idx}
-                    className="text-xs text-slate-500 dark:text-slate-400 font-mono leading-snug"
-                  >
-                    {log}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </motion.aside>
-      )}
-
     </div>
   );
 };

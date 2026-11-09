@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // GeM Automation APIs
   gemOpenBrowser: (options) => ipcRenderer.invoke('gem:open-browser', options),
+  gemUpdateViewport: (payload) => ipcRenderer.invoke('gem:update-viewport', payload),
   gemCheckChromeDebugging: () => ipcRenderer.invoke('gem:check-chrome-debugging'),
   gemWaitForLogin: (timeoutMs) => ipcRenderer.invoke('gem:wait-for-login', timeoutMs),
   gemNavigateToOrders: () => ipcRenderer.invoke('gem:navigate-to-orders'),
@@ -52,4 +53,9 @@ contextBridge.exposeInMainWorld('electron', {
   gemGetSavedFieldValues: () => ipcRenderer.invoke('gem:get-saved-field-values'),
   gemGetSavedFieldValue: (fieldLabel) => ipcRenderer.invoke('gem:get-saved-field-value', fieldLabel),
   gemClearFieldValues: () => ipcRenderer.invoke('gem:clear-field-values'),
+  gemSaveCredentials: (payload) => ipcRenderer.invoke('gem:save-credentials', payload),
+  gemGetCredentials: () => ipcRenderer.invoke('gem:get-credentials'),
+  gemClearCredentials: () => ipcRenderer.invoke('gem:clear-credentials'),
+  gemAutoFillLogin: (username, password) =>
+    ipcRenderer.invoke('gem:autofill-login', { username, password }),
 });

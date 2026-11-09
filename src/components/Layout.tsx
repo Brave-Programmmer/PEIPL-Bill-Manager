@@ -32,6 +32,18 @@ interface OpenFileEvent {
   content: unknown;
 }
 
+const PAGE_LABELS: Record<string, string> = {
+  '/': 'Dashboard',
+  '/history': 'Invoice History',
+  '/settings': 'Settings',
+  '/pdf-tools': 'PDF Tools',
+};
+
+const getPageLabel = (pathname: string) => {
+  if (pathname.startsWith('/editor')) return 'Invoice Editor';
+  return PAGE_LABELS[pathname] ?? 'Dashboard';
+};
+
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { theme, toggleTheme, setCurrentInvoice } = useInvoiceStore();
   const location = useLocation();
@@ -181,11 +193,18 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="flex-1 min-h-0 relative overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50">
         <header className="sticky top-0 z-[200] glass-card mx-6 mt-6 p-4 rounded-2xl flex items-center justify-between border-slate-200/50 dark:border-slate-800/50 shadow-sm backdrop-blur-xl">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="capitalize">{location.pathname.replace('/', '') || 'Dashboard'}</span>
-            <ChevronRight size={14} />
-            <span className="text-foreground font-medium">Overview</span>
-          </div>
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+          >
+            <span className="font-medium text-muted-foreground/70">
+              PEIPL BILL
+            </span>
+            <ChevronRight size={14} className="text-muted-foreground/50" />
+            <span className="text-foreground font-semibold">
+              {getPageLabel(location.pathname)}
+            </span>
+          </nav>
           
            <div className="flex items-center gap-3">
              {/* Profile/Quick Actions */}
@@ -204,10 +223,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               className="h-full min-h-0"
             >
               {children}

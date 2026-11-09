@@ -24,6 +24,7 @@ export interface IElectronAPI {
   
   // GeM Automation APIs
   gemOpenBrowser: (options?: { mode?: 'auto' | 'managed' | 'attach'; cdp?: string }) => Promise<{ success: boolean; method?: string; reused?: boolean; error?: string }>;
+  gemUpdateViewport: (payload: { visible: boolean; x: number; y: number; width: number; height: number }) => Promise<{ success: boolean; error?: string }>;
   gemCheckChromeDebugging: () => Promise<{ success: boolean; chromeRunning: boolean; debuggingPort?: number | string }>;
   gemWaitForLogin: (timeoutMs?: number) => Promise<{ success: boolean; error?: string }>;
   gemNavigateToOrders: () => Promise<{ success: boolean; error?: string }>;
@@ -50,6 +51,10 @@ export interface IElectronAPI {
   gemGetSavedFieldValues: () => Promise<{ success: boolean; values?: GeM_SavedFieldValue[]; error?: string }>;
   gemGetSavedFieldValue: (fieldLabel: string) => Promise<{ success: boolean; value?: GeM_SavedFieldValue; error?: string }>;
   gemClearFieldValues: () => Promise<{ success: boolean; error?: string }>;
+  gemSaveCredentials: (payload: { username: string; password: string; remember?: boolean }) => Promise<{ success: boolean; encrypted?: boolean; error?: string }>;
+  gemGetCredentials: () => Promise<{ success: boolean; credentials?: { username: string; password: string; remember: boolean } | null; error?: string }>;
+  gemClearCredentials: () => Promise<{ success: boolean; error?: string }>;
+  gemAutoFillLogin: (username: string, password: string) => Promise<{ success: boolean; filled?: { foundUser: boolean; foundPass: boolean; filledUser: boolean; filledPass: boolean }; error?: string }>;
 }
 
 declare global {

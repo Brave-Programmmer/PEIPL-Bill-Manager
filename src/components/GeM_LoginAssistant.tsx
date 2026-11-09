@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, AlertCircle, CheckCircle2, Monitor, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Monitor, RefreshCw, AlertTriangle, ShieldCheck, KeyRound, Eye, EyeOff, Trash2, Save, Wand2 } from 'lucide-react';
 import { useGeM_Store } from '../store/useGeM_Store';
 import { useDisplayName } from '../utils/userProfile';
 
@@ -29,6 +29,17 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
   const [chromeRunning, setChromeRunning] = React.useState<boolean | null>(null);
   const [isCheckingChrome, setIsCheckingChrome] = React.useState(false);
   const abortedWaitRef = React.useRef(false);
+
+  // Stored GeM credentials (username/password) for auto-fill.
+  const [username, setUsername] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [rememberCreds, setRememberCreds] = React.useState(true);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [hasSavedCreds, setHasSavedCreds] = React.useState(false);
+  const [savingCreds, setSavingCreds] = React.useState(false);
+  const [credsMessage, setCredsMessage] = React.useState('');
+  const [credsError, setCredsError] = React.useState('');
+  const [fillingNow, setFillingNow] = React.useState(false);
 
   const addLog = useGeM_Store((state) => state.addSessionLog);
   const addError = useGeM_Store((state) => state.addSessionError);
@@ -68,6 +79,26 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
     addLogEntry('Opening GeM login page...');
 
     try {
+      // Load any stored credentials so we can display + auto-fill them.
+      let creds = { username: '', password: '' };
+      let shouldAutoFill = false;
+      try {
+        const saved = await window.electron.gemGetCredentials?.();
+        if (saved?.success && saved.credentials) {
+          creds = {
+            username: saved.credentials.username || '',
+            password: saved.credentials.password || '',
+          };
+          shouldAutoFill = saved.credentials.remember !== false;
+          setUsername(creds.username);
+          setPassword(creds.password);
+          setRememberCreds(shouldAutoFill);
+          setHasSavedCreds(!!(creds.username || creds.password));
+        }
+      } catch {
+        /* no stored credentials */
+      }
+
       const result = await window.electron.gemOpenBrowser();
 
       if (result.success) {
@@ -77,6 +108,21 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
         setLoginStatus('waiting');
         setIsOpening(false);
         setIsWaitingForLogin(true);
+
+        // Auto-fill stored credentials into the GeM login form.
+        if (shouldAutoFill && (creds.username || creds.password)) {
+          addLogEntry('Auto-filling stored GeM credentials...');
+          try {
+            const fill = await window.electron.gemAutoFillLogin?.(creds.username, creds.password);
+            if (fill?.success) {
+              addLogEntry('Credentials filled — complete the OTP / captcha to log in.');
+            } else {
+              addLogEntry('Stored credentials ready — fill them manually if needed.');
+            }
+          } catch {
+            /* ignore auto-fill failure */
+          }
+        }
 
         // Start waiting for login
         handleWaitForLogin();
@@ -135,6 +181,16 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
     }
   };
 
+  // Agentic run: open the embedded GeM view and start waiting for login
+  // automatically when this step mounts — no manual "Open GeM Login" click.
+  const autoStartRef = React.useRef(false);
+  React.useEffect(() => {
+    if (autoStartRef.current || disabled) return;
+    autoStartRef.current = true;
+    void handleOpenGeM();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled]);
+
   const finishAsLoggedIn = (message: string) => {
     abortedWaitRef.current = true;
     addLogEntry(message);
@@ -170,6 +226,59 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
     checkChromeDebugging();
   };
 
+  const handleSaveCredentials = async () => {
+    setSavingCreds(true);
+    setCredsMessage('');
+    setCredsError('');
+    try {
+      const result = await window.electron.gemSaveCredentials?.({ username, password, remember: rememberCreds });
+      if (result?.success) {
+        setHasSavedCreds(!!(username || password));
+        setCredsMessage('Credentials saved on this device. They will be auto-filled next time.');
+        addLogEntry('Saved GeM credentials');
+      } else {
+        setCredsError(result?.error || 'Failed to save credentials');
+      }
+    } catch (err) {
+      setCredsError(err instanceof Error ? err.message : 'Failed to save credentials');
+    } finally {
+      setSavingCreds(false);
+    }
+  };
+
+  const handleClearCredentials = async () => {
+    setCredsMessage('');
+    setCredsError('');
+    try {
+      await window.electron.gemClearCredentials?.();
+    } catch {
+      /* best-effort */
+    }
+    setUsername('');
+    setPassword('');
+    setHasSavedCreds(false);
+    setCredsMessage('Saved credentials removed.');
+    addLogEntry('Cleared saved GeM credentials');
+  };
+
+  const handleFillNow = async () => {
+    setFillingNow(true);
+    setCredsMessage('');
+    setCredsError('');
+    try {
+      const result = await window.electron.gemAutoFillLogin?.(username, password);
+      if (result?.success) {
+        addLogEntry('Filled credentials into the GeM login form');
+      } else {
+        setCredsError(result?.error || 'Could not find the GeM login fields to fill');
+      }
+    } catch (err) {
+      setCredsError(err instanceof Error ? err.message : 'Auto-fill failed');
+    } finally {
+      setFillingNow(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -182,9 +291,111 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
           Step 2: User Authentication
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          The GeM portal will open in Chrome. Please complete the login process manually,
-          including any passwords, captchas, and OTP verification code.
+          GeM opens right here inside this app — no separate browser tab or window.
+          Complete the login (password and OTP) in the embedded panel, and the upload
+          continues automatically once you&apos;re authenticated.
         </p>
+      </div>
+
+      {/* Saved Credentials */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <KeyRound className="w-4 h-4 text-blue-500" />
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Saved GeM Credentials</h4>
+          {hasSavedCreds && (
+            <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" /> Stored
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+          Store your GeM seller username &amp; password once and the app fills them on the login page.
+          The password is encrypted on this device. OTP / captcha is always entered manually.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+              GeM Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="GeM seller username"
+              autoComplete="off"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+              GeM Password
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="GeM password"
+                autoComplete="off"
+                className="w-full px-3 py-2 pr-10 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberCreds}
+              onChange={(e) => setRememberCreds(e.target.checked)}
+              className="rounded border-slate-300 dark:border-slate-600"
+            />
+            Auto-fill these credentials when GeM opens
+          </label>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              onClick={handleSaveCredentials}
+              disabled={savingCreds || (!username && !password)}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              {savingCreds ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save
+            </button>
+            <button
+              onClick={handleFillNow}
+              disabled={fillingNow || (!username && !password)}
+              className="px-4 py-2 rounded-lg text-sm font-medium border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              {fillingNow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              Fill into GeM now
+            </button>
+            {hasSavedCreds && (
+              <button
+                onClick={handleClearCredentials}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear
+              </button>
+            )}
+          </div>
+
+          {credsMessage && (
+            <div className="text-xs text-emerald-600 dark:text-emerald-400">{credsMessage}</div>
+          )}
+          {credsError && (
+            <div className="text-xs text-red-600 dark:text-red-400">{credsError}</div>
+          )}
+        </div>
       </div>
 
       {/* Connection Diagnostics HUD */}
@@ -296,8 +507,8 @@ export const GeM_LoginAssistant: React.FC<GeM_LoginAssistantProps> = ({
           >
             <div className="font-medium mb-1">Waiting for login...</div>
             <p className="text-xs leading-relaxed">
-              Please complete the login in the Chrome browser. This waits up to 5 minutes before timeout.
-              If you are already logged in, use the button below to continue immediately.
+              Complete the login in the embedded GeM panel on the right. This waits up to 5 minutes
+              before timing out. Already signed in? Use the button below to continue immediately.
             </p>
           </motion.div>
         )}

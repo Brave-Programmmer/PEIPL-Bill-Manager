@@ -152,7 +152,7 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
     setErrorMessage('');
   };
 
-  const handleVerifyAndProcess = async () => {
+  const handleVerifyAndProcess = React.useCallback(async () => {
     if (!matchedOrder) return;
 
     setStatus('processing');
@@ -201,13 +201,23 @@ export const GeM_OrderMatching: React.FC<GeM_OrderMatchingProps> = ({
       setStatus('error');
       addError(errorMsg);
     }
-  };
+  }, [matchedOrder, addLog, addError, onOrderMatched]);
+
+  // Agentic run: once an order is matched, automatically process it, verify the
+  // page, and open the invoice form — no manual "Process Order" click needed.
+  const autoProcessedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (status !== 'matched' || !matchedOrder || autoProcessedRef.current || disabled) return;
+    autoProcessedRef.current = true;
+    void handleVerifyAndProcess();
+  }, [status, matchedOrder, disabled, handleVerifyAndProcess]);
 
   const handleRetry = () => {
     setStatus('idle');
     setErrorMessage('');
     setOrders([]);
     setMatchedOrder(null);
+    autoProcessedRef.current = false;
     autoStartedRef.current = false;
     void handleNavigateToOrders();
     autoStartedRef.current = true;

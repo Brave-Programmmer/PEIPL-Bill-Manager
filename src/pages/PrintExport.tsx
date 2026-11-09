@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { IndustrialInvoice } from '../templates/IndustrialInvoice';
 import type { Invoice, CompanyDetails } from '../utils/types';
-import { MitraLoadingOverlay } from '../components/MitraLoadingOverlay';
 
 const PRINT_DATA_KEY = 'PEIPL_PRINT_DATA';
 
@@ -55,11 +55,12 @@ export const PrintExport: React.FC = () => {
 
   if (!data) {
     return (
-      <MitraLoadingOverlay
-        visible
-        message="Mitra is preparing your printable bill..."
-        detail="I am loading the invoice layout and getting it ready for the printer."
-      />
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-3 text-slate-500">
+          <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+          <p className="text-sm font-medium">Preparing your printable bill…</p>
+        </div>
+      </div>
     );
   }
 

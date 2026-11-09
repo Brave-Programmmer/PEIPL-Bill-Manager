@@ -4,7 +4,6 @@ import { X, Printer, FileDown, ShieldCheck, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 
 import { IndustrialInvoice } from '../templates/IndustrialInvoice';
-import { MitraLoadingOverlay } from './MitraLoadingOverlay';
 import type { Invoice, CompanyDetails } from '../utils/types';
 import {
   DEFAULT_ITEMS_PER_PAGE,
@@ -96,11 +95,6 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
         >
-          <MitraLoadingOverlay
-            visible={isLoading}
-            message={loadingTask === 'pdf' ? 'Mitra is creating your PDF...' : 'Mitra is preparing your print...'}
-            detail={loadingTask === 'pdf' ? 'I am packaging the invoice into a clean, shareable document.' : 'I am handing the finished invoice to the printer.'}
-          />
           {/* Modal Container */}
           <motion.div
             initial={{ scale: 0.96, opacity: 0 }}
@@ -161,7 +155,7 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
                     isLoading && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Printer size={18} />}
+                  {loadingTask === 'print' ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Printer size={18} />}
                   Print Invoice
                 </button>
                 <button 
@@ -172,7 +166,7 @@ export const PrintPreview: React.FC<Props> = ({ isOpen, onClose, invoice, compan
                     isLoading && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  {isLoading ? <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /> : <FileDown size={18} />}
+                  {loadingTask === 'pdf' ? <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /> : <FileDown size={18} />}
                   Save PDF
                 </button>
 

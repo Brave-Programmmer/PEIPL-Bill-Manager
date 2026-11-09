@@ -40,6 +40,10 @@ export interface GeM_FieldMapping {
   category: 'auto-filled' | 'user-defined' | 'required';
   isRequired: boolean;
   isFilled: boolean;
+  /** Options for dropdown (<select>) fields, extracted from the GeM form. */
+  options?: { value: string; label: string }[];
+  /** Which GeM page/step (1-based) this field was discovered on. */
+  page?: number;
 }
 
 export interface GeM_SavedFieldValue {

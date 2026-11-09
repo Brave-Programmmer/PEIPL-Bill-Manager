@@ -33,7 +33,6 @@ import { useInvoiceStore } from "../store/useInvoiceStore";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import { migrateOldInvoice } from "../utils/migration";
 import { extractGemBillNumber, gemPdfKey } from "../utils/gemMatching";
-import { MitraLoadingOverlay } from "../components/MitraLoadingOverlay";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -101,6 +100,7 @@ interface StatCardData {
 /* -------------------------------------------------------------------------- */
 
 const ROW_HEIGHT = 72;
+const SKELETON_ROWS = 7;
 
 // One column template shared by the header and every row, so they can't drift apart.
 const GRID_COLS =
@@ -360,6 +360,43 @@ const InvoiceRow = memo(
 );
 InvoiceRow.displayName = "InvoiceRow";
 
+/** Placeholder row shown while the very first folder scan is running. */
+const SkeletonRow = memo(({ top }: { top: number }) => (
+  <div
+    role="row"
+    aria-hidden="true"
+    className={clsx(
+      GRID_COLS,
+      "absolute top-0 left-0 w-full items-center border-b border-border",
+    )}
+    style={{ height: ROW_HEIGHT, transform: `translateY(${top}px)` }}
+  >
+    <div className="flex justify-center">
+      <div className="h-5 w-5 rounded-full bg-muted animate-pulse" />
+    </div>
+    <div className="px-4">
+      <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+    </div>
+    <div className="px-4 space-y-2">
+      <div className="h-3 w-32 rounded bg-muted animate-pulse" />
+      <div className="h-2.5 w-20 rounded bg-muted/70 animate-pulse" />
+    </div>
+    <div className="px-4">
+      <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+    </div>
+    <div className="px-4 flex justify-end">
+      <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+    </div>
+    <div className="px-4 flex justify-center">
+      <div className="h-5 w-24 rounded-full bg-muted animate-pulse" />
+    </div>
+    <div className="px-2 flex justify-end">
+      <div className="h-6 w-6 rounded-lg bg-muted animate-pulse" />
+    </div>
+  </div>
+));
+SkeletonRow.displayName = "SkeletonRow";
+
 /* -------------------------------------------------------------------------- */
 /*  Dashboard                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -367,6 +404,7 @@ InvoiceRow.displayName = "InvoiceRow";
 export const Dashboard: React.FC = () => {
   const { scanPaths, gemPaths, setCurrentInvoice } = useInvoiceStore();
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
 
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [gemPdfs, setGemPdfs] = useState<GemPdf[]>([]);
@@ -666,36 +704,25 @@ export const Dashboard: React.FC = () => {
   /* ------------------------------ Empty state ----------------------------- */
 
   const emptyMessage = useMemo(() => {
-    if (isScanning && invoices.length === 0)
-      return { icon: RefreshCw, spin: true, text: "Scanning invoices…" };
     if (invoices.length === 0) {
       return {
         icon: FileText,
-        spin: false,
         text: "No invoices found in the selected folders.",
       };
     }
     if (!selectedFY)
-      return { icon: FileText, spin: false, text: "Select a financial year." };
+      return { icon: FileText, text: "Select a financial year." };
     if (!showAllBills && fyInvoices.length > 0) {
       return {
         icon: ShieldCheck,
-        spin: false,
         text: `All bills for FY ${selectedFY} are on GeM.`,
       };
     }
     return {
       icon: FileText,
-      spin: false,
       text: `No bills for FY ${selectedFY}.`,
     };
-  }, [
-    isScanning,
-    invoices.length,
-    selectedFY,
-    showAllBills,
-    fyInvoices.length,
-  ]);
+  }, [invoices.length, selectedFY, showAllBills, fyInvoices.length]);
 
   /* -------------------------------- Render -------------------------------- */
 
@@ -710,11 +737,6 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-10" aria-busy={isScanning}>
-      <MitraLoadingOverlay
-        visible={isScanning}
-        message="Mitra is checking your billing folders..."
-        detail="I am matching invoices and GeM records so your dashboard is up to date."
-      />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -834,6 +856,29 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Rescan progress — a thin, non-blocking indicator instead of a full-screen overlay. */}
+        {isScanning && (
+          <div
+            role="progressbar"
+            aria-label="Scanning invoice folders"
+            className="relative h-0.5 w-full shrink-0 overflow-hidden bg-primary-500/10"
+          >
+            {reduceMotion ? (
+              <div className="absolute inset-y-0 left-0 w-1/2 bg-primary-500/50" />
+            ) : (
+              <motion.div
+                className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-primary-500 to-transparent"
+                animate={{ x: ["-100%", "400%"] }}
+                transition={{
+                  duration: 1.1,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+            )}
+          </div>
+        )}
+
         {/* Horizontal scroll on narrow windows; header and rows scroll together. */}
         <div className="flex-1 min-h-0 overflow-x-auto">
           <div
@@ -897,14 +942,23 @@ export const Dashboard: React.FC = () => {
               className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar"
               style={{ scrollbarGutter: "stable" }}
             >
-              {visibleInvoices.length === 0 ? (
+              {invoices.length === 0 && !lastScannedAt && !error ? (
+                <div
+                  className="relative"
+                  style={{ height: SKELETON_ROWS * ROW_HEIGHT }}
+                  aria-hidden="true"
+                >
+                  {Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                    <SkeletonRow key={i} top={i * ROW_HEIGHT} />
+                  ))}
+                </div>
+              ) : visibleInvoices.length === 0 ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-muted-foreground">
                   <emptyMessage.icon
                     size={40}
                     className={clsx(
                       "opacity-40",
                       emptyMessage.icon === ShieldCheck && "text-emerald-500",
-                      emptyMessage.spin && "animate-spin",
                     )}
                   />
                   <p className="text-sm font-bold">{emptyMessage.text}</p>

@@ -2,7 +2,7 @@
  * GeM IPC Handlers (JavaScript version for Electron)
  */
 
-import { ipcMain, BrowserView, dialog } from 'electron';
+import { ipcMain, dialog, safeStorage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -22,7 +22,7 @@ const gemStore = new Store({
 });
 
 export function registerGeM_IpcHandlers(getMainWindow) {
-  const browserService = getGeM_BrowserService();
+  const browserService = getGeM_BrowserService(getMainWindow);
 
   ipcMain.handle('select-pdf', async () => {
     const result = await dialog.showOpenDialog({
@@ -54,50 +54,24 @@ export function registerGeM_IpcHandlers(getMainWindow) {
     }
   });
 
-  // Embedded BrowserView for GeM UI
-  let gemBrowserView = null;
-
-  const createGeMBrowserView = (win) => {
-    if (!win) return null;
-    if (gemBrowserView && !gemBrowserView.isDestroyed && !gemBrowserView.webContents.isDestroyed()) {
-      return gemBrowserView;
-    }
-
-    gemBrowserView = new BrowserView({
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    win.setBrowserView(gemBrowserView);
-    const [w, h] = win.getContentSize();
-    // Reserve right-side column for app UI; adjust as needed
-    gemBrowserView.setBounds({ x: Math.floor(w * 0.33), y: 0, width: Math.floor(w * 0.67), height: h });
-    gemBrowserView.setAutoResize({ width: true, height: true });
-
-    return gemBrowserView;
-  };
-
-  const closeGeMBrowserView = (win) => {
-    try {
-      if (gemBrowserView && !gemBrowserView.webContents.isDestroyed()) {
-        if (win) win.removeBrowserView(gemBrowserView);
-        gemBrowserView.webContents.destroy();
-        gemBrowserView = null;
-      }
-    } catch (e) {
-      gemBrowserView = null;
-    }
-  };
-
   ipcMain.handle('gem:open-browser', async (event, options) => {
     try {
-      // The service page is the page used by every later workflow step.
-      // Opening only a BrowserView leaves that page uninitialized.
-      // options: { mode?: 'auto'|'managed'|'attach', cdp?: string }
+      // Opens the embedded GeM view (WebContentsView) inside the app window.
+      // options: { mode?: 'auto'|'managed'|'attach', cdp?: string } — passed
+      // through to the fallback engines when the embedded view is unavailable.
       return await browserService.openGeM(options || {});
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  // The renderer reports the live geometry of the viewport container so the
+  // embedded native view can be positioned/overlaid exactly over it.
+  ipcMain.handle('gem:update-viewport', async (event, payload) => {
+    try {
+      return browserService.embedded
+        ? browserService.embedded.setViewport(payload)
+        : { success: true };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -240,11 +214,7 @@ export function registerGeM_IpcHandlers(getMainWindow) {
   });
 
   ipcMain.handle('gem:close-browser', async (event) => {
-    try {
-      const win = getMainWindow ? getMainWindow() : null;
-      closeGeMBrowserView(win);
-    } catch (e) {}
-    // Also close any automation-managed browser if present
+    // Tears down the embedded view (and any fallback session).
     await browserService.close();
     return { success: true };
   });
@@ -290,6 +260,91 @@ export function registerGeM_IpcHandlers(getMainWindow) {
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * GeM login credential storage.
+   *
+   * The password is encrypted at rest with Electron's safeStorage (DPAPI on
+   * Windows) so the user can store their GeM username/password once and have
+   * the app auto-fill them on the login page.
+   */
+  ipcMain.handle('gem:save-credentials', (event, payload) => {
+    try {
+      const username = String(payload?.username ?? '');
+      const password = String(payload?.password ?? '');
+      let passwordEnc = null;
+      let passwordPlain = null;
+
+      if (password) {
+        if (safeStorage.isEncryptionAvailable()) {
+          passwordEnc = safeStorage.encryptString(password).toString('base64');
+        } else {
+          // Fallback for environments without an OS keystore — still kept only
+          // in the local electron-store file, never sent anywhere.
+          passwordPlain = password;
+        }
+      }
+
+      gemStore.set('gemCredentials', {
+        username,
+        passwordEnc,
+        password: passwordPlain,
+        remember: payload?.remember !== false,
+        timestamp: Date.now(),
+      });
+      return { success: true, encrypted: !!passwordEnc };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('gem:get-credentials', () => {
+    try {
+      const creds = gemStore.get('gemCredentials');
+      if (!creds) return { success: true, credentials: null };
+
+      let password = '';
+      if (creds.passwordEnc) {
+        try {
+          if (safeStorage.isEncryptionAvailable()) {
+            password = safeStorage.decryptString(Buffer.from(creds.passwordEnc, 'base64'));
+          }
+        } catch {
+          password = '';
+        }
+      } else if (creds.password) {
+        password = creds.password;
+      }
+
+      return {
+        success: true,
+        credentials: {
+          username: creds.username || '',
+          password,
+          remember: creds.remember !== false,
+        },
+      };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('gem:clear-credentials', () => {
+    try {
+      gemStore.delete('gemCredentials');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('gem:autofill-login', async (event, payload = {}) => {
+    try {
+      return await browserService.autoFillLogin(payload?.username ?? '', payload?.password ?? '');
+    } catch (err) {
+      return { success: false, error: String(err) };
     }
   });
 }

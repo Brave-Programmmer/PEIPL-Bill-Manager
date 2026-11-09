@@ -52,7 +52,7 @@ const STORAGE_KEY = "peipl-companion-settings";
 const MESSAGE_KEY = "peipl-companion-messages";
 const GREETING_KEY = "peipl-companion-last-greeting";
 const DEFAULT_MODEL = "openrouter/free";
-const DEFAULT_API_KEY = process.env.OPEN_ROUTER_API_KEY;
+const DEFAULT_API_KEY = import.meta.env.VITE_OPEN_ROUTER_API_KEY ?? "";
 
 const createMessage = (
   role: CompanionMessage["role"],
